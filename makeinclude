@@ -1,0 +1,14 @@
+
+#
+# Please specify where the binaries should go here
+#
+OUTPUT_PATH = /home/ayalpinkus/Work/LowPriority/shinglejs/
+
+
+SHINGLE_PATH = ./
+
+OBJ_PATH = $(OUTPUT_PATH)obj/
+BIN_PATH = $(OUTPUT_PATH)bin/
+SHINGLE_INCLUDE = $(SHINGLE_PATH)src/
+DATA_PATH = $(OUTPUT_PATH)sample-graph_500000/
+
