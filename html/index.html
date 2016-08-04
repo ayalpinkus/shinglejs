@@ -1,0 +1,143 @@
+<html>
+  <head>
+    <link href="https://fonts.googleapis.com/css?family=Lora|Source+Sans+Pro|Source+Code+Pro" rel="stylesheet"> 
+    <link rel="stylesheet" href="shinglesite.css">
+    <link rel="stylesheet" href="shingle.css">
+    <script src="shingle.js" type="text/javascript"></script>
+  </head>
+  <body>
+    <div class = "pane title">
+      <center>
+        <h1>shingle.js</h1>
+        <h2>Publish large interactive graphs online</h2>
+      </center>
+    </div>
+    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-nodefield="nodenumber" ></div>
+
+    <div class = "containerpadding" ></div>
+
+    <center>
+      <div class = "pane card" >
+<span class="shinglecaption">
+A random graph containing 500,000 nodes and 500,000 edges. You can pan and zoom around the map seamlessly.
+</span>
+<p style="padding:0.25in;"></p>
+<div class="intro">
+shingle.js is designed to publish large interactive graphs online.
+<p>
+It consists of two parts: an off-line tool that chops your large network graph into tiles stored in json files, and a Javascript library which loads these tiles when in view and inserts and removes them from the DOM of a single svg element.
+</div>
+<h3>Usage instructions</h3>
+The package contains an utility that chops up a graph into tiles, and a Javascript framework that allows display of the tiled graph, using svg.
+
+<h3>Build instructions</h3>
+
+<ul>
+  <li>Download source code <a href="shinglejs.tgz">here</a>.</li>
+  <li>Edit the 'makeinclude' file: modify at least OUTPUT_PATH so that it points to a directory where the resulting output files can be stored.</li>
+  <li>Type 'make'</li>
+</ul>
+
+That's it! The OUTPUT_PATH directory should now contain a directory 'random-graph_500000'. Open the file '_sample.html' inside that directory, and you should see the above map.
+
+<h3>How it works</h3>
+
+There are two executables in the bin/ directory inside the OUTPUT_PATH directory:
+<ul>
+  <li>json2bin.a - converts a json file containing a graph into a binary form, preparing it for the next step</li>
+  <li>quadbuilder.a - splits up the graph into tiles</li>
+</ul>
+
+These commands are invoked as follows: to for example convert a graph in json_input.json and have the results stored in the directory graph_output_path/, invoke the commands:
+
+<pre class="shinglecode">
+$(OUTPUT_PATH)bin/json2bin.a json_input.json nodes.bin edges.bin
+$(OUTPUT_PATH)bin/quadbuilder.a nodes.bin edges.bin graph_output_path/
+</pre>
+
+In addition, the files shingle.js and shingle.css are needed.
+<p>
+A minimal html file that shows the graph:
+
+<pre class="shinglecode">
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;link rel="stylesheet" href="shingle.css"&gt;
+    &lt;script src="shingle.js" type="text/javascript"&gt;&lt;/script&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="graph_output_path/" &gt;&lt;/div&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre>
+
+See '_sample.html' for an example of how to then display the graph.
+
+The primary input file for the tool chain is a json file that contains an array of nodes and an array of edges between the nodes, in the following format:
+
+<pre class="shinglecode">
+{
+  "nodes": 
+  [
+    {
+      "nodeid": "0",
+      "name": "Node number 0",
+      "x": -4.69657,
+      "y": -111.763,
+      "size": 1,
+      "community": 644
+    },
+    
+    ...
+    
+    {
+      "nodeid": "99999",
+      "name": "Node number 99999",
+      "x": -345.672,
+      "y": -154.746,
+      "size": 1,
+      "community": 334
+    }
+  ],
+  "relations": 
+  [
+    {
+      "nodeidA": "0",
+      "nodeidB": "489087",
+      "strength": 1.000000
+    },
+
+    ...
+
+    {
+      "nodeidA": "499957",
+      "nodeidB": "499964",
+      "strength": 1.000000
+    }
+  ]
+}
+
+</pre>
+
+
+This distribution comes with one example graph, 'sampledata/random-graph_500000.json', which is the one you see in the banner above.
+
+
+<h3>License</h3>
+<ul>
+  <li>shingle.js is released under the <a href="APACHE_LICENSE-2.0.txt">Apache 2.0 license</a></li>
+</ul>
+<h3>Contributors</h3>
+<ul>
+  <li><script type="text/javascript">document.write(unescape('%3C%61%20%63%6C%61%73%73%3D%22%73%68%69%6E%67%6C%65%6D%61%69%6C%22%20%68%72%65%66%3D%22%6D%61%69%6C%74%6F%3A%61%70%69%6E%6B%75%73%40%78%73%34%61%6C%6C%2E%6E%6C%22%3E%41%79%61%6C%20%50%69%6E%6B%75%73%3C%2F%61%3E'));</script></li>
+  <li>Ingrid Halters</li>
+</ul>
+<p style="padding:0.25in;"></p>
+<span class="copyrightnotice"></span>
+<p style="padding:0.125in;"></p>
+
+      </div>
+    </center>
+
+  </body>
+</html>

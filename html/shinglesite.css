@@ -1,0 +1,96 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body
+{
+  margin:0;
+  font-family: 'Lora', serif;
+  font-size:12pt;
+  color:#525c65;
+}
+
+h3
+{
+  margin-top:0.5in;
+}
+
+#mfrmap
+{
+  border-top: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.containerpadding
+{
+  height:6in;
+/*
+  margin-bottom:0.25in;
+*/
+}
+
+.pane
+{
+  display:block;
+  width:100%;
+  padding-top:0.125in;
+}
+
+.title
+{
+  height:1.5in;
+  background-color:#ffffff; /* #525c65; */
+  color:#525c65; /* #ffffff; */
+  font-family: 'Source Sans Pro', sans-serif;
+}
+
+.shinglecaption
+{
+  font-style:italic;
+}
+
+.intro
+{
+  font-size:16pt;
+}
+
+
+.card
+{
+  width:80%;
+  min-width:4in;
+  max-width:7in;
+  text-align:left;
+  background-color:#ffffff;
+}
+
+.shinglecode
+{
+  background-color:#f8f8f8;
+  font-family: 'Source Code Pro', monospace;
+  overflow:hidden;
+}
+
+
+.copyrightnotice:after
+{
+  content:"All content on this site (c) 2016 Ayal Pinkus. All rights reserved.";
+}
+
+
+
+/* Responsive design */
+@media screen and (max-width: 4in)
+{ 
+  .card
+  {
+    width:100%;
+    min-width:100%;
+  }
+  .title
+  {
+    height:2in;
+  }
+}
+
