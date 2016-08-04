@@ -31,6 +31,7 @@ $(RELEASE_PATH)_sample.html:
 	-mkdir $(RELEASE_PATH)
 	-rm -rf $(RELEASE_PATH)*
 	-mkdir $(RELEASE_PATH)random-graph_500000/
+	cd sampledata/ ; tar zxvf random-graph_500000.json.tgz ; cd ..
 	$(BIN_PATH)json2bin.a sampledata/random-graph_500000.json $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin
 	$(BIN_PATH)quadbuilder.a $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin $(RELEASE_PATH)random-graph_500000/
 	rm $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin
