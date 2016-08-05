@@ -71,7 +71,18 @@ A minimal html file that shows the graph:
 &lt;/html&gt;
 </pre>
 
-See '_sample.html' for an example of how to then display the graph.
+<p>
+The parameters to a shinglecontainer div are:
+<ul>
+  <li><span class="shinglecode">data-width="..."</span> - specify width of the graph viewer</li>
+  <li><span class="shinglecode">data-height="..."</span> - specify the height of the graph viewer</li>
+  <li><span class="shinglecode">data-graph-path="..."</span> - specify the path to the data. Useful for providing more graphs, or for destroying the browser cache.</li>
+  <li><span class="shinglecode">data-nodefield="..."</span> - the name to use in the link to specify what node to highlight initially.</li>
+</ul>
+<p>
+See <a href="_sample.html">_sample.html</a> for an example of how to then display the graph, or an example where an initial node is highlighted: <a href="_sample.html?nodenumber=499600">_sample.html?nodenumber=499600</a>
+
+<p>
 
 The primary input file for the tool chain is a json file that contains an array of nodes and an array of edges between the nodes, in the following format:
 

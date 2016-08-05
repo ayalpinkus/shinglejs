@@ -72,7 +72,6 @@ release-website:
 	cp $(SHINGLE_PATH)html/*.css $(RELEASE_PATH)
 	cp $(SHINGLE_PATH)html/*.js $(RELEASE_PATH)
 	cp $(SHINGLE_PATH)html/*.html $(RELEASE_PATH)
-	tar zcvf $(RELEASE_PATH)shinglejs.tgz *
 	cp APACHE_LICENSE-2.0.txt $(RELEASE_PATH)
 
 
