@@ -412,13 +412,11 @@ function findQuadsToRemove()
 
 }
 
-    
-
-
 
 function findPosition(nodeid)
 {
   var xmlhttp = new XMLHttpRequest();
+  xmlhttp.overrideMimeType("application/json");
 
   xmlhttp.onreadystatechange = function() {
     if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
@@ -446,6 +444,7 @@ function findPosition(nodeid)
 function loadMapInfo()
 {
   var xmlhttp = new XMLHttpRequest();
+  xmlhttp.overrideMimeType("application/json");
 
   xmlhttp.onreadystatechange = function() {
     if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
@@ -492,6 +491,7 @@ function loadQuad(quadid)
 
   var json_url = graphPath+quadid+".json";
   var xmlhttp = new XMLHttpRequest();
+  xmlhttp.overrideMimeType("application/json");
 
   xmlhttp.onreadystatechange = function() {
     if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
@@ -520,6 +520,7 @@ var lastX=0;
 var lastY=0;
 var startTranslateX = 0;
 var startTranslateY = 0;
+var dragging = false;
 
 var sfactor = 48;
 
@@ -554,7 +555,7 @@ function attachMouseEvents()
 //@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
 debug ("<p style=\"color:#ffffff\">"+0+"</p>");
 
-        setSvgTransforms();
+        setSvgTranslations();
       }
     },false);
 
@@ -607,7 +608,7 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
 
         document.getElementById("zoom").value = 100.0*((1/currentScale)-minScale)/(maxScale-minScale);
 	
-        setSvgTransforms();
+        setSvgScales();
         findQuadsToRemove();
         findQuadsToDraw();
       }
@@ -1090,7 +1091,7 @@ var currentTranslateY = 0;
 var currentnodeid = null;
 
 
-function setSvgTransforms()
+function setSvgScales()
 {
   var i;
   var len;
@@ -1102,7 +1103,13 @@ function setSvgTransforms()
     element.setAttribute('transform', 'scale('+currentScale+')');
   }
 
-  authorTextEls = document.getElementsByClassName('translation');
+}
+
+function setSvgTranslations()
+{
+  var i;
+  var len;
+  var authorTextEls = document.getElementsByClassName('translation');
   len = authorTextEls.length;
   for (i = 0; i < len; i++)
   {
@@ -1111,16 +1118,23 @@ function setSvgTransforms()
   }
 }
 
+
+function setSvgTransforms()
+{
+  setSvgScales();
+  setSvgTranslations();
+}
+
 function doscale(value)
 {
   currentScale = 1/(minScale + (maxScale-minScale)*(value/100.0));
-  setSvgTransforms();
+  setSvgScales();
 }
 function doscaleFinish(value)
 {
   currentScale = 1/(minScale + (maxScale-minScale)*(value/100.0));
 
-  setSvgTransforms();
+  setSvgScales();
   findQuadsToRemove();
   findQuadsToDraw();
 }
@@ -1453,7 +1467,7 @@ function changehighlightTo(quadid, nodeid)
 
       currentTranslateX = -node.x;
       currentTranslateY = -node.y;
-      setSvgTransforms();
+      setSvgTranslations();
       findQuadsToRemove();
       findQuadsToDraw();
     }
