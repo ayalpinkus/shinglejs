@@ -1059,15 +1059,12 @@ function appendSvgDOM(quadid)
   gnod.setAttributeNS (null, "class", "quadcontainer");
   gnod.setAttributeNS (null, "id", quadid);
 
-
   for (i=0;i<graph["nodes"].length;i++)
   {
     var node = graph["nodes"][i];
     var circle = MakeNodeElement(quadid, node,nodemodeGraph);
     gnod.appendChild(circle);
   }
-
-
 
   var highlightednodescontainer = document.getElementById('highlightednodescontainer');
   if (highlightednodescontainer != null)
