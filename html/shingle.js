@@ -555,19 +555,25 @@ function attachMouseEvents()
 //@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
 debug ("<p style=\"color:#ffffff\">"+0+"</p>");
 
+        /* Seems to be a bug in Firefox: when selecting node for first time, than drag map,
+	 * screen becomes white. Solution for now is to remove names just before it starts to drag the map.
+         */
+	clearNodeNames();
+
+
         setSvgTranslations();
       }
     },false);
 
     mfrmap.addEventListener('mouseup',function(evt)
     {
+      dragging=false;
       var newX = (evt.pageX - mfrmap.offsetLeft);
       var newY = (evt.pageY - mfrmap.offsetTop);
       if (Math.abs(newX-lastX)<10 && Math.abs(newY-lastY)<10)
       {
         removeInfoAbout();
       }
-      dragging=false;
       findQuadsToRemove();
       findQuadsToDraw();
     },false);
@@ -750,9 +756,6 @@ function clearNodeNames()
 
 function showNodeName(quadid,node)
 {
-
-return;
-
   clearNodeNames();
 
   var minsize = mapinfo["minsize"];
@@ -786,7 +789,11 @@ return;
   textfield.setAttributeNS (null, "fill",fontColor);
   textfield.setAttributeNS (null, "font-family",fontFamily); 
   textfield.setAttributeNS (null, "font-size",size);
-  textfield.innerHTML = nodename;
+
+  var t = document.createTextNode(nodename);
+  textfield.appendChild(t);   
+
+//  textfield.innerHTML = nodename;
   gnames.appendChild(textfield);
 }
 
