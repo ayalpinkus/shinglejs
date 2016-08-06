@@ -718,6 +718,18 @@ function createBaseSvgDOM()
   gtranslation.appendChild (gnames);
   gnames.setAttributeNS (null, "id", "namescontainer");
 
+/*TODO remove, test code
+{
+  var textfield = document.createElementNS (xmlns, "text");
+  textfield.setAttributeNS (null, "x","0"); 
+  textfield.setAttributeNS (null, "y","0");
+  textfield.setAttributeNS (null, "fill",'rgb(255,255,255)');
+  textfield.setAttributeNS (null, "font-size","1");
+  textfield.innerHTML = "dummy";
+  gnames.appendChild(textfield);
+}
+*/
+
   document.getElementById("mfrmap").appendChild(svg);   
 }
 
@@ -738,16 +750,19 @@ function clearNodeNames()
 
 function showNodeName(quadid,node)
 {
+
+return;
+
   clearNodeNames();
 
   var minsize = mapinfo["minsize"];
   var maxsize = mapinfo["maxsize"];
   var x = node.x;
   var y = node.y;
-  var name = node.name;
+  var nodename = node.name;
 
-  var size=Math.floor(0.2*fontSize);
-  size = ""+size;
+  var size=4*fontScale; // Math.floor(0.2*fontSize);
+//  size = ""+size;
 /*
   var range = 0.8;
   if (Math.abs(maxsize-minsize) > 0.00001)
@@ -755,7 +770,7 @@ function showNodeName(quadid,node)
     range = (node.size-minsize)/(maxsize-minsize);
   }
   range = Math.pow(range,1.25);
-  size = ((0.1+0.9*range)*fontSize);
+  size = fontScale*((0.1+0.9*range)*fontSize);
 */
   var gnames = document.getElementById("namescontainer");
   if (gnames == null)
@@ -765,16 +780,13 @@ function showNodeName(quadid,node)
 
   var textfield = document.createElementNS (xmlns, "text");
   textfield.setAttributeNS (null, "class", "authorText");
-  textfield.setAttributeNS (null, "id", "nodetext-"+node.nodeid);
-  textfield.setAttributeNS (null, "data-quad-id",""+quadid); 
-  textfield.setAttributeNS (null, "data-scopus-name",""+node.name); 
-  textfield.setAttributeNS (null, "data-scopus-id",""+node.nodeid); 
-  textfield.setAttributeNS (null, "x",""+x); 
-  textfield.setAttributeNS (null, "y",""+y);
-  textfield.setAttributeNS (null, "fill",""+fontColor);
-  textfield.setAttributeNS (null, "font-family",""+fontFamily); 
-  textfield.setAttributeNS (null, "font-size",""+(size*fontScale));
-  textfield.innerHTML = name;
+  textfield.setAttributeNS (null, "id", "centerednodetext");
+  textfield.setAttributeNS (null, "x",x); 
+  textfield.setAttributeNS (null, "y",y);
+  textfield.setAttributeNS (null, "fill",fontColor);
+  textfield.setAttributeNS (null, "font-family",fontFamily); 
+  textfield.setAttributeNS (null, "font-size",size);
+  textfield.innerHTML = nodename;
   gnames.appendChild(textfield);
 }
 
