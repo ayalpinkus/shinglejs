@@ -47,41 +47,6 @@ function nodeColorTuple(node)
     return [211,47,91];
   }
 
-
-/*
-  switch (communityid % 14)
-  {
-  case 0:
-    return [157,028,118];
-  case 1:   
-    return [75,186,128];
-  case 2:   
-    return [232,114,36];
-  case 3:   
-    return [226,006,018];
-  case 4:   
-    return [255,200,31];
-  case 5:   
-    return [0,158,206];
-  case 6:   
-    return [19,170,19];
-  case 7:   
-    return [255,87,127];
-  case 8:   
-    return [163,091,186];
-  case 9:   
-    return [015,212,213];
-  case 10:   
-    return [208,127,028];
-  case 11:   
-    return [214,29,79];
-  case 12:   
-    return [203,229,014];
-  case 13:   
-    return [163,136,057];
-  }
-*/
-
   return [214,29,79];
 }
 
@@ -137,43 +102,7 @@ function nodeEdgeColor(node)
   var b = colortuple[2];
   return "rgba("+r+","+g+","+b+",1)";
 
-/*TODO remove
-  var communityid = node.community;
-
-  switch (communityid % 14)
-  {
-  case 0:
-    return "rgba(157,028,118,1)";
-  case 1:   
-    return "rgba(75,186,128,1)";
-  case 2:   
-    return "rgba(232,114,36,1)";
-  case 3:   
-    return "rgba(226,006,018,1)";
-  case 4:   
-    return "rgba(255,200,31,1)";
-  case 5:   
-    return "rgba(0,158,206,1)";
-  case 6:   
-    return "rgba(19,170,19,1)";
-  case 7:   
-    return "rgba(255,87,127,1)";
-  case 8:   
-    return "rgba(163,091,186,1)";
-  case 9:   
-    return "rgba(015,212,213,1)";
-  case 10:   
-    return "rgba(208,127,028,1)";
-  case 11:   
-    return "rgba(214,29,79,1)";
-  case 12:   
-    return "rgba(203,229,014,16)";
-  case 13:   
-    return "rgba(163,136,057,1)";
-  }
-*/
-
-  return "rgba(214,29,79,1)";
+//  return "rgba(214,29,79,1)";
 }
 
 // Font voor de namen
@@ -1055,7 +984,7 @@ function appendSvgDOM(quadid)
     rect.setAttributeNS (null, "height", ""+(graph["header"]["ymax"]-graph["header"]["ymin"]));
     rect.style.fill="none";
     rect.style.stroke="black";
-    rect.style.strokeWidth=0.2*edgeWidthScale;
+    rect.style.strokeWidth=edgeWidthScale;
     rect.style.fillOpacity="0";
     rect.style.strokeOpacity="0.75";
     glin.appendChild(rect);
@@ -1725,6 +1654,15 @@ function onLoad_graph()
   }
 //alert("nodefield = "+nodefield);
 
+  var set_debugQuads = shinglecontainer.getAttribute("data-debug-quads");
+  if (set_debugQuads != null)
+  {
+    if (set_debugQuads == "true")
+    {
+      debugQuads = set_debugQuads;
+    }
+  }
+
   graphPath = shinglecontainer.getAttribute("data-graph-path");
   if (graphPath == null)
   {
@@ -1793,6 +1731,11 @@ function onLoad_graph()
         nodeid = request[nodefield];
         var hashed = getHash( nodeid );
       }
+      if (request["debugquads"] != null)
+      {
+        debugQuads = true;
+      }
+      
     }
 
     if (nodeid)
