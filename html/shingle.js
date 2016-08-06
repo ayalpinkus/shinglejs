@@ -573,6 +573,8 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
     mfrmap.addEventListener('mouseup',function(evt)
     {
       dragging=false;
+      findQuadsToDraw();
+      findQuadsToRemove();
 
       {
         var ghighlightednames = document.getElementById("highlightednamescontainer");
@@ -588,14 +590,12 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
       {
         removeInfoAbout();
       }
-      findQuadsToRemove();
-      findQuadsToDraw();
     },false);
     mfrmap.addEventListener('mouseleave',function(evt)
     {
       dragging=false;
-      findQuadsToRemove();
       findQuadsToDraw();
+      findQuadsToRemove();
     },false);
 
 
@@ -629,8 +629,8 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
         document.getElementById("zoom").value = 100.0*((1/currentScale)-minScale)/(maxScale-minScale);
 	
         setSvgScales();
-        findQuadsToRemove();
         findQuadsToDraw();
+        findQuadsToRemove();
       }
       return evt.preventDefault() && false;
     };
@@ -772,19 +772,22 @@ function clearNodeName(elemid)
   ghighlightednames.removeChild(textfield);
 }
 
+
+
 function showNodeName(quadid,node,elemid)
 {
   var textfield = document.getElementById(elemid);
   if (textfield == null)
   {
-    var size=4*fontScale; // Math.floor(0.2*fontSize);
+//hier
+    var size=nodeRadiusScale*1000.0/currentScale; // Math.floor(0.2*fontSize);
     var ghighlightednames = document.getElementById("highlightednamescontainer");
     if (ghighlightednames == null)
     {
       return;
     }
     textfield = document.createElementNS (xmlns, "text");
-    textfield.setAttributeNS (null, "class", "authorText");
+    textfield.setAttributeNS (null, "class", "authortext");
     textfield.setAttributeNS (null, "id", elemid);
     textfield.setAttributeNS (null, "fill",fontColor);
     textfield.setAttributeNS (null, "font-family",fontFamily); 
@@ -1054,7 +1057,7 @@ function MakeNodeElement(quadid,node,mode)
     });
 
   circle.addEventListener('mouseup', function(e) {
-        e.cancelBubble=true;
+//        e.cancelBubble=true;
     });
 
   return circle;
@@ -1158,6 +1161,16 @@ function setSvgScales()
     var element = authorTextEls[i];
     element.setAttribute('transform', 'scale('+currentScale+')');
   }
+//hier
+
+  var size=nodeRadiusScale*1000.0/currentScale; // Math.floor(0.2*fontSize);
+  var authorTextEls = document.getElementsByClassName('authortext');
+  len = authorTextEls.length;
+  for (i = 0; i < len; i++)
+  {
+    var element = authorTextEls[i];
+    element.setAttributeNS (null, "font-size",size);
+  }
 
 }
 
@@ -1191,8 +1204,8 @@ function doscaleFinish(value)
   currentScale = 1/(minScale + (maxScale-minScale)*(value/100.0));
 
   setSvgScales();
-  findQuadsToRemove();
   findQuadsToDraw();
+  findQuadsToRemove();
 }
 
 
@@ -1525,8 +1538,8 @@ function changehighlightTo(quadid, nodeid)
       currentTranslateX = -node.x;
       currentTranslateY = -node.y;
       setSvgTranslations();
-      findQuadsToRemove();
       findQuadsToDraw();
+      findQuadsToRemove();
     }
   }
 }
