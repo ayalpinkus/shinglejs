@@ -773,14 +773,27 @@ function clearNodeName(elemid)
 }
 
 
+function calcCurrentFontScale()
+{
+debug("1...");
+  var rect = document.getElementById('mfrmap').getBoundingClientRect();
+debug("2...");
+  var startscale = 1/(minScale + (maxScale-minScale)*(startZoomControlValue/100.0));
+debug("3...");
+  var size=(mapinfo["averageQuadWidth"]*(rect.bottom-rect.top)/10000.0)*startscale/currentScale;
+debug("4...");
+//debug ("sixe="+size);
+  return size;
+}
+
 
 function showNodeName(quadid,node,elemid)
 {
   var textfield = document.getElementById(elemid);
   if (textfield == null)
   {
-//hier
-    var size=nodeRadiusScale*1000.0/currentScale; // Math.floor(0.2*fontSize);
+    var size=calcCurrentFontScale();
+
     var ghighlightednames = document.getElementById("highlightednamescontainer");
     if (ghighlightednames == null)
     {
@@ -1161,9 +1174,8 @@ function setSvgScales()
     var element = authorTextEls[i];
     element.setAttribute('transform', 'scale('+currentScale+')');
   }
-//hier
 
-  var size=nodeRadiusScale*1000.0/currentScale; // Math.floor(0.2*fontSize);
+  var size = calcCurrentFontScale();
   var authorTextEls = document.getElementsByClassName('authortext');
   len = authorTextEls.length;
   for (i = 0; i < len; i++)
