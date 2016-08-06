@@ -525,13 +525,8 @@ var dragging = false;
 
 var sfactor = 48;
 
-function attachMouseEvents()
+function handleMouseDown(evt)
 {
-  var mfrmap = document.getElementById("mfrmap");
-  if (mfrmap)
-  {
-    mfrmap.addEventListener('mousedown',function(evt)
-    {
       lastX = (evt.pageX - mfrmap.offsetLeft);
       lastY = (evt.pageY - mfrmap.offsetTop);
       startTranslateX = currentTranslateX;
@@ -542,10 +537,10 @@ function attachMouseEvents()
       sfactor = (rect.right-rect.left)/((1.0*mapinfo["quadtree"]["xmax"])-mapinfo["quadtree"]["xmin"]);
 
       dragging=true;
-    },false);
+}
 
-    mfrmap.addEventListener('mousemove',function(evt)
-    {
+function handleMouseMove(evt)
+{
       if  (dragging)
       {
         var newX = (evt.pageX - mfrmap.offsetLeft);
@@ -568,10 +563,10 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
         }
         setSvgTranslations();
       }
-    },false);
+}
 
-    mfrmap.addEventListener('mouseup',function(evt)
-    {
+function handleMouseUp(evt)
+{
       dragging=false;
       findQuadsToDraw();
       findQuadsToRemove();
@@ -590,7 +585,58 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
       {
         removeInfoAbout();
       }
+}
+
+function attachMouseEvents()
+{
+  var mfrmap = document.getElementById("mfrmap");
+  if (mfrmap)
+  {
+    mfrmap.addEventListener('mousedown',function(evt)
+    {
+      handleMouseDown(evt);
     },false);
+
+    mfrmap.addEventListener('mousemove',function(evt)
+    {
+      handleMouseMove(evt);
+    },false);
+
+    mfrmap.addEventListener('mouseup',function(evt)
+    {
+      handleMouseUp(evt);
+    },false);
+
+
+    mfrmap.addEventListener('touchstart',function(evt)
+    {
+      var touchobj = evt.changedTouches[0];
+      handleMouseDown(touchobj);
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    },false);
+
+    mfrmap.addEventListener('touchmove',function(evt)
+    {
+      var touchobj = evt.changedTouches[0];
+      handleMouseMove(touchobj);
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    },false);
+
+    mfrmap.addEventListener('touchend',function(evt)
+    {
+      var touchobj = evt.changedTouches[0];
+      handleMouseUp(touchobj);
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    },false);
+
+
+
+
+
+
     mfrmap.addEventListener('mouseleave',function(evt)
     {
       dragging=false;
@@ -1072,6 +1118,33 @@ function MakeNodeElement(quadid,node,mode)
   circle.addEventListener('mouseup', function(e) {
 //        e.cancelBubble=true;
     });
+
+
+
+
+  circle.addEventListener('touchstart',function(evt)
+    {
+      var e = evt.changedTouches[0];
+      showInfoAbout(this.getAttribute('data-quadid'),this.getAttribute('data-nodeid'));
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    });
+
+  circle.addEventListener('touchmove',function(evt)
+    {
+      var e = evt.changedTouches[0];
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    });
+
+  circle.addEventListener('touchend',function(evt)
+    {
+      var e = evt.changedTouches[0];
+      evt.preventDefault();
+      evt.cancelBubble=true;
+    });
+
+
 
   return circle;
 }
