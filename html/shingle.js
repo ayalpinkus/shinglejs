@@ -138,7 +138,7 @@ var graphs = {};
 
 var nodeRadiusScale = 1.0/100.0;
 var nodeEdgeRadiusScale = 1/500.0;
-var fontScale = 1.0/30.0;
+var fontScale = 1.0/50.0;
 var minScale = 0.1;
 var maxScale = 0.5;
 
@@ -462,7 +462,7 @@ function loadMapInfo()
 if (nodeRadiusScale>1) nodeRadiusScale = 1;
 
       nodeEdgeRadiusScale = mapinfo["averageLineLength"]/200.0;
-      fontScale = mapinfo["averageLineLength"]/40.0;
+      fontScale = mapinfo["averageLineLength"]/80.0;
       edgeWidthScale = mapinfo["averageLineLength"]*minScale/10.0;
 
       currentScale = 1/(minScale + (maxScale-minScale)*(startZoomControlValue/100.0));
@@ -709,13 +709,74 @@ function createBaseSvgDOM()
   gtranslation.appendChild (gnodes);
   gnodes.setAttributeNS (null, "id", "nodescontainer");
 
-
   var ghighlightednodes = document.createElementNS (xmlns, "g");
   gtranslation.appendChild (ghighlightednodes);
   ghighlightednodes.setAttributeNS (null, "id", "highlightednodescontainer");
 
+  var gnames = document.createElementNS (xmlns, "g");
+  gtranslation.appendChild (gnames);
+  gnames.setAttributeNS (null, "id", "namescontainer");
+
   document.getElementById("mfrmap").appendChild(svg);   
 }
+
+
+function clearNodeNames()
+{
+  var gnames = document.getElementById("namescontainer");
+  if (gnames == null)
+  {
+    return;
+  }
+
+  while (gnames.firstChild) 
+  {
+    gnames.removeChild(gnames.firstChild);
+  }
+}
+
+function showNodeName(quadid,node)
+{
+  clearNodeNames();
+
+  var minsize = mapinfo["minsize"];
+  var maxsize = mapinfo["maxsize"];
+  var x = node.x;
+  var y = node.y;
+  var name = node.name;
+
+  var size=Math.floor(0.2*fontSize);
+  size = ""+size;
+/*
+  var range = 0.8;
+  if (Math.abs(maxsize-minsize) > 0.00001)
+  {
+    range = (node.size-minsize)/(maxsize-minsize);
+  }
+  range = Math.pow(range,1.25);
+  size = ((0.1+0.9*range)*fontSize);
+*/
+  var gnames = document.getElementById("namescontainer");
+  if (gnames == null)
+  {
+    return;
+  }
+
+  var textfield = document.createElementNS (xmlns, "text");
+  textfield.setAttributeNS (null, "class", "authorText");
+  textfield.setAttributeNS (null, "id", "nodetext-"+node.nodeid);
+  textfield.setAttributeNS (null, "data-quad-id",""+quadid); 
+  textfield.setAttributeNS (null, "data-scopus-name",""+node.name); 
+  textfield.setAttributeNS (null, "data-scopus-id",""+node.nodeid); 
+  textfield.setAttributeNS (null, "x",""+x); 
+  textfield.setAttributeNS (null, "y",""+y);
+  textfield.setAttributeNS (null, "fill",""+fontColor);
+  textfield.setAttributeNS (null, "font-family",""+fontFamily); 
+  textfield.setAttributeNS (null, "font-size",""+(size*fontScale));
+  textfield.innerHTML = name;
+  gnames.appendChild(textfield);
+}
+
 
 
 function ScheduledAppendQuad(quadid)
@@ -1362,8 +1423,8 @@ function switchtopage(page)
 
 function mfrinfoClear()
 {
-
   theInfoData.clear();
+  clearNodeNames();
 }
 
 function mfrinfoAppendAuthor(quadid, nodeid)
@@ -1450,6 +1511,8 @@ function async_showmfrinfo(quadid, nodeid)
     {
       var circle = MakeNodeElement(this.quadid,node1,nodemodeCentered);
       ghighlightednodes.appendChild(circle);
+
+      showNodeName(this.quadid,node1);
     }
 
     var i;
