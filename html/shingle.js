@@ -522,6 +522,7 @@ var startTranslateX = 0;
 var startTranslateY = 0;
 var dragging = false;
 
+
 var sfactor = 48;
 
 function attachMouseEvents()
@@ -558,9 +559,13 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
         /* Seems to be a bug in Firefox: when selecting node for first time, than drag map,
 	 * screen becomes white. Solution for now is to remove names just before it starts to drag the map.
          */
-	clearNodeNames();
-
-
+	{
+          var ghighlightednames = document.getElementById("highlightednamescontainer");
+          if (ghighlightednames != null)
+          {
+            ghighlightednames.style.display="none";
+          }
+        }
         setSvgTranslations();
       }
     },false);
@@ -568,6 +573,15 @@ debug ("<p style=\"color:#ffffff\">"+0+"</p>");
     mfrmap.addEventListener('mouseup',function(evt)
     {
       dragging=false;
+
+      {
+        var ghighlightednames = document.getElementById("highlightednamescontainer");
+        if (ghighlightednames != null)
+        {
+          ghighlightednames.style.display="inherit";
+        }
+      }
+
       var newX = (evt.pageX - mfrmap.offsetLeft);
       var newY = (evt.pageY - mfrmap.offsetTop);
       if (Math.abs(newX-lastX)<10 && Math.abs(newY-lastY)<10)
@@ -720,21 +734,9 @@ function createBaseSvgDOM()
   gtranslation.appendChild (ghighlightednodes);
   ghighlightednodes.setAttributeNS (null, "id", "highlightednodescontainer");
 
-  var gnames = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (gnames);
-  gnames.setAttributeNS (null, "id", "namescontainer");
-
-/*TODO remove, test code
-{
-  var textfield = document.createElementNS (xmlns, "text");
-  textfield.setAttributeNS (null, "x","0"); 
-  textfield.setAttributeNS (null, "y","0");
-  textfield.setAttributeNS (null, "fill",'rgb(255,255,255)');
-  textfield.setAttributeNS (null, "font-size","1");
-  textfield.innerHTML = "dummy";
-  gnames.appendChild(textfield);
-}
-*/
+  var ghighlightednames = document.createElementNS (xmlns, "g");
+  gtranslation.appendChild (ghighlightednames);
+  ghighlightednames.setAttributeNS (null, "id", "highlightednamescontainer");
 
   document.getElementById("mfrmap").appendChild(svg);   
 }
@@ -742,21 +744,59 @@ function createBaseSvgDOM()
 
 function clearNodeNames()
 {
-  var gnames = document.getElementById("namescontainer");
-  if (gnames == null)
+  var ghighlightednames = document.getElementById("highlightednamescontainer");
+  if (ghighlightednames == null)
   {
     return;
   }
 
-  while (gnames.firstChild) 
+  while (ghighlightednames.firstChild) 
   {
-    gnames.removeChild(gnames.firstChild);
+    ghighlightednames.removeChild(ghighlightednames.firstChild);
   }
 }
 
-function showNodeName(quadid,node)
+function clearNodeName(elemid)
 {
-  clearNodeNames();
+  var ghighlightednames = document.getElementById("highlightednamescontainer");
+  if (ghighlightednames == null)
+  {
+    return;
+  }
+
+  var textfield = document.getElementById(elemid);
+  if (textfield == null)
+  {
+    return;
+  }
+  ghighlightednames.removeChild(textfield);
+}
+
+function showNodeName(quadid,node,elemid)
+{
+  var textfield = document.getElementById(elemid);
+  if (textfield == null)
+  {
+    var size=4*fontScale; // Math.floor(0.2*fontSize);
+    var ghighlightednames = document.getElementById("highlightednamescontainer");
+    if (ghighlightednames == null)
+    {
+      return;
+    }
+    textfield = document.createElementNS (xmlns, "text");
+    textfield.setAttributeNS (null, "class", "authorText");
+    textfield.setAttributeNS (null, "id", elemid);
+    textfield.setAttributeNS (null, "fill",fontColor);
+    textfield.setAttributeNS (null, "font-family",fontFamily); 
+    textfield.setAttributeNS (null, "font-size",size);
+    textfield.setAttributeNS (null, "data-nodeid","");
+    ghighlightednames.appendChild(textfield);
+  }
+
+  if (textfield.getAttribute('data-nodeid') == node.nodeid)
+  {
+    return;
+  }
 
   var minsize = mapinfo["minsize"];
   var maxsize = mapinfo["maxsize"];
@@ -764,7 +804,11 @@ function showNodeName(quadid,node)
   var y = node.y;
   var nodename = node.name;
 
-  var size=4*fontScale; // Math.floor(0.2*fontSize);
+  var range = nodeRange(node);
+
+  var nodeRadius = calcNodeRadius(range)*nodeRadiusScale;
+
+
 //  size = ""+size;
 /*
   var range = 0.8;
@@ -775,26 +819,19 @@ function showNodeName(quadid,node)
   range = Math.pow(range,1.25);
   size = fontScale*((0.1+0.9*range)*fontSize);
 */
-  var gnames = document.getElementById("namescontainer");
-  if (gnames == null)
-  {
-    return;
-  }
 
-  var textfield = document.createElementNS (xmlns, "text");
-  textfield.setAttributeNS (null, "class", "authorText");
-  textfield.setAttributeNS (null, "id", "centerednodetext");
-  textfield.setAttributeNS (null, "x",x); 
+
+  textfield.setAttributeNS (null, "data-nodeid",node.nodeid);
+  textfield.setAttributeNS (null, "x",(x+2*nodeRadius)); 
   textfield.setAttributeNS (null, "y",y);
-  textfield.setAttributeNS (null, "fill",fontColor);
-  textfield.setAttributeNS (null, "font-family",fontFamily); 
-  textfield.setAttributeNS (null, "font-size",size);
+
+  while (textfield.firstChild) 
+  {
+    textfield.removeChild(textfield.firstChild);
+  }
 
   var t = document.createTextNode(nodename);
   textfield.appendChild(t);   
-
-//  textfield.innerHTML = nodename;
-  gnames.appendChild(textfield);
 }
 
 
@@ -1199,6 +1236,7 @@ function HighlightedNode()
       {
         return;
       }
+
       var range = nodeRange(node);
 
       var nEdgeWid = nodeEdgeWidth(range)*nodeEdgeRadiusScale;
@@ -1541,8 +1579,8 @@ function async_showmfrinfo(quadid, nodeid)
     {
       var circle = MakeNodeElement(this.quadid,node1,nodemodeCentered);
       ghighlightednodes.appendChild(circle);
-
-      showNodeName(this.quadid,node1);
+      clearNodeNames();
+      showNodeName(this.quadid,node1, "centerednodetext");
     }
 
     var i;
@@ -1636,7 +1674,6 @@ function showmfrinfo(quadid, nodeid)
 
 function removeInfoAbout()
 {
-
   var glines = document.getElementById("linescontainer");
   var gnodes = document.getElementById("nodescontainer");
 
@@ -1706,10 +1743,25 @@ function hoverIn(quadid,nodeid)
     }
   }
 
+/*
+  var graph = graphs[quadid];
+  if (graph != null)
+  {
+    var nodeIndex = graph["idmap"][nodeid];
+    var node = graph["nodes"][nodeIndex];
+    if (node != null)
+    {
+      showNodeName(quadid,node,"highlightingnode");
+    }
+  }
+*/
 }
 
 function hoverOut()
 {
+/*
+  clearNodeName("highlightingnode");
+*/
 
   if (higlightedLine)
   {
