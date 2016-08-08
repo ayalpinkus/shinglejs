@@ -821,14 +821,9 @@ function clearNodeName(elemid)
 
 function calcCurrentFontScale()
 {
-debug("1...");
   var rect = document.getElementById('mfrmap').getBoundingClientRect();
-debug("2...");
   var startscale = 1/(minScale + (maxScale-minScale)*(startZoomControlValue/100.0));
-debug("3...");
   var size=(mapinfo["averageQuadWidth"]*(rect.bottom-rect.top)/10000.0)*startscale/currentScale;
-debug("4...");
-//debug ("sixe="+size);
   return size;
 }
 
