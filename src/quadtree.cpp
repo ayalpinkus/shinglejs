@@ -7,6 +7,11 @@
 #include "graph.h"
 #include "quadtree.h"
 
+
+#define noUSE_QSORT_R
+
+
+
 QuadNode::~QuadNode()
 {
   if (left) delete left;
@@ -87,21 +92,52 @@ MFRQuadTree::~MFRQuadTree()
 }
 
 
-int xcompare(const void *a, const void *b, void *arg)
+
+#ifdef USE_QSORT_R
+#else // USE_QSORT_R
+#endif // USE_QSORT_R
+
+#ifdef USE_QSORT_R
+#else // USE_QSORT_R
+  MFRNodeArray *global_mfr_node_array = NULL;
+#endif // USE_QSORT_R
+
+
+int xcompare(const void *a, const void *b
+#ifdef USE_QSORT_R
+, void *arg
+#else // USE_QSORT_R
+#endif // USE_QSORT_R
+)
+
 {
   long indexa = *(long*)a;
   long indexb = *(long*)b;
+#ifdef USE_QSORT_R
   MFRNodeArray *nds = (MFRNodeArray *)arg;
+#else // USE_QSORT_R
+  MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
+#endif // USE_QSORT_R
 
 //printf("ax=%f, bx=%f\n",nds->nodes[indexa].x, nds->nodes[indexb].x);
   return (nds->nodes[indexb].x > nds->nodes[indexa].x);
 }
 
-int ycompare(const void *a, const void *b, void *arg)
+
+int ycompare(const void *a, const void *b
+#ifdef USE_QSORT_R
+, void *arg
+#else // USE_QSORT_R
+#endif // USE_QSORT_R
+)
 {
   long indexa = *(long*)a;
   long indexb = *(long*)b;
+#ifdef USE_QSORT_R
   MFRNodeArray *nds = (MFRNodeArray *)arg;
+#else // USE_QSORT_R
+  MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
+#endif // USE_QSORT_R
   return (nds->nodes[indexb].y > nds->nodes[indexa].y);
 }
 
@@ -133,7 +169,12 @@ void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
   {
     if (r->xmax-r->xmin > r->ymax-r->ymin)
     {
+#ifdef USE_QSORT_R
       qsort_r(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),xcompare, &nodes);
+#else // USE_QSORT_R
+      global_mfr_node_array = &nodes;
+      qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),xcompare);
+#endif // USE_QSORT_R
 
 //debug_show_sorted("Sorted X", r);
 
@@ -156,7 +197,13 @@ void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
     }
     else
     {
+#ifdef USE_QSORT_R
       qsort_r(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),ycompare, &nodes);
+#else // USE_QSORT_R
+      global_mfr_node_array = &nodes;
+      qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),ycompare);
+#endif // USE_QSORT_R
+
 
 //debug_show_sorted("Sorted Y", r);
 
