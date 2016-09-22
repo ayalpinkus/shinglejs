@@ -54,7 +54,7 @@ static void WriteJSONfile(FILE*f, MFRNodeArray &nodes, MFREdgeArray &edges)
     fprintf(f,"      \"nodeidB\": \"%s\",\n", edges.edges[i].nodeidB);
 
 
-    fprintf(f,"      \"strength\": %f\n", 1.0d);
+    fprintf(f,"      \"strength\": %f\n", 1.0);
     fprintf(f,"    }\n");
     if (i<edges.nredges-1)
     {
