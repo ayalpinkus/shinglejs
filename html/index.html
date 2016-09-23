@@ -3,7 +3,9 @@
     <link href="https://fonts.googleapis.com/css?family=Lora|Source+Sans+Pro|Source+Code+Pro" rel="stylesheet"> 
     <link rel="stylesheet" href="shinglesite.css">
     <link rel="stylesheet" href="shingle.css">
+    <link rel="stylesheet" href="shingleInfoPanel.css">
     <script src="shingle.js" type="text/javascript"></script>
+    <script src="shingleInfoPanel.js" type="text/javascript"></script>
   </head>
   <body>
     <div class = "pane title">
@@ -12,7 +14,7 @@
         <h2>Publish large interactive graphs online</h2>
       </center>
     </div>
-    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-nodefield="nodenumber"></div>
+    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-node-field="nodenumber" ></div>
 
     <div class = "containerpadding" ></div>
 
@@ -57,7 +59,7 @@ $(OUTPUT_PATH)bin/quadbuilder.a nodes.bin edges.bin graph_output_path/
 
 In addition, the files shingle.js and shingle.css are needed.
 <p>
-A minimal html file that shows the graph:
+A minimal html file that contains the graph:
 
 <pre class="shinglecode">
 &lt;html&gt;
@@ -72,20 +74,120 @@ A minimal html file that shows the graph:
 </pre>
 
 <p>
-The parameters to a shinglecontainer div are:
+With the basic parameters to a shinglecontainer div:
 <ul>
   <li><span class="shinglecode">data-width="..."</span> - specify width of the graph viewer</li>
   <li><span class="shinglecode">data-height="..."</span> - specify the height of the graph viewer</li>
   <li><span class="shinglecode">data-graph-path="..."</span> - specify the path to the data. Useful for providing more graphs, or for destroying the browser cache.</li>
-  <li><span class="shinglecode">data-nodefield="..."</span> - the name to use in the link to specify what node to highlight initially.</li>
+  <li><span class="shinglecode">data-node-field="..."</span> - the name to use in the link to specify what node to highlight initially.</li>
   <li><span class="shinglecode">data-debug-quads="true"</span> - show the tile boundaries, for debugging purposes.</li>
 
 </ul>
+Shingle can display info about active or hovered nodes in an info panel in the graph. The info panel is a separate supplied component that can be synchronized using callbacks.
+</p>
+
+<p>The JS code to show the graph on a page, including info panel:</p>
+
+<pre class="shinglecode">
+/*
+ * create an info component in the graph panel, here we use the supplied shingleInfoPanel.js
+ */
+var theInfoData = new shingleInfoPanel();
+
+/*
+ * create the graph
+ */
+var myGraph = shingle.new({
+  // use the created element
+  el: document.getElementById("shinglecontainer"),
+  // supply info panel content
+  infoContentEl: theInfoData.el,
+  onClear: function() {
+    //
+    // clear the info panel
+    theInfoData.clear();
+  }, onFocus: function(quadid, nodeid, data) {
+    //
+    // when clicked on node in graph set this node in the info panel
+    theInfoData.setMainNode(quadid, nodeid, data);
+  }, onFocusRelatedNode: function(quadid, nodeid, data) {
+    //
+    // when clicked on node in graph this is called for each related node
+    // set the related nodes in the info panel
+    theInfoData.appendRelatedNode(quadid, nodeid, data);
+  }, onHoverIn: function(quadid, nodeid) {
+    //
+    // when hovered (mousover) on node in graph highlight in the info panel
+    theInfoData.highLightNode(quadid,nodeid);
+  }, onHoverOut: function() {
+    //
+    // when blur (mousout) on node in graph unhighlight in the info panel
+    theInfoData.unHighLightNode();
+  }
+});                                        
+
+/*
+ * set the info panel hover behaviour
+ */
+theInfoData.onHover(function(quadId, nodeId) {
+  //
+  // highlight the hovered node in the graph
+  myGraph.hoverIn(quadId, nodeId);
+});
+
+/*
+ * set the info panel click behaviour
+ */
+theInfoData.onClick(function(quadid, nodeid) {
+  //
+  // make the cliched node active in the graph
+  myGraph.changehighlightTo(quadid, nodeid);
+});
+</pre>
+
+<p>
+To run without the info panel simply delete the 'theInfoData' logic and omit the 'infoContentEl' parameter. To create your own info panel or custom behaviour attached to graph UI actions you can create your own components, and wire it up to shingle using the callbacks specified in shingle.new.
+</p>
+
+<p>
+Parameters can be supplied as data attributes of the shinglecontainer, or passed to the JS shingle.new call without the 'data' part and in camelCase. So for instance we could replace the 'data-graph-path' attribute with a graphPath parameter in the call to shingle.new:
+<pre class="shinglecode">
+...
+
+/*
+ * create the graph
+ */
+var myGraph = shingle.new({
+  // use the created element
+  el: document.getElementById("shinglecontainer"),
+  // supply info panel content
+  infoContentEl: theInfoData.el,
+  graphPath: 'graph_output_path/',
+  ...
+</pre>
+</p>
+
+<p>
+More advanced parameters:
+<ul>
+  <li><span class="shinglecode">initialZoom: "..."</span> - specify initial zoom level (1-100)</li>
+  <li><span class="shinglecode">scrollZoom: true | false</span> - scrolling in the graph zooms (mousewheel), default true</li>
+  <li><span class="shinglecode">scrollZoomInitDelay: "..."</span> - milliseconds to wait after scrolling to trigger zoom, to prevent long page scrolls to get stuck in a zoom action when passing the graph, default 400</li>
+  <li><span class="shinglecode">fontFamily: "sans"</span> - font to use for text in the graph</li>
+  <li><span class="shinglecode">fontColor: [r, g, b, a]</span> - color for text in the graph, specified as array of rgb or rgba values</li>  
+  <li><span class="shinglecode">nodeColors: [[r, g, b, a], .. ]</span> - color scheme, array of colors to use in the graph for the communities, the colors are specified as arrays of rgb or rgba values, and cycles if the number of communities exceeds the number of colors</li>
+</ul>
+</p>
+
+<p>
+  All CSS classnames start with shingle-, if this still would collide with your css you can overrule the classnames by supplying custom classnames in parameters: containerClass, containerWithFocusClass, scaleElClass, translationElClass, nodeClass, nodeTextClass and mapClass.
+</p>
+
 <p>
 See <a href="_sample.html">_sample.html</a> for an example of how to then display the graph, or an example where an initial node is highlighted: <a href="_sample.html?nodenumber=499600">_sample.html?nodenumber=499600</a>, or an example showing the edges of the tiles: <a href="_sample.html?debugquads=true">_sample.html?debugquads=true</a>
+</p>
 
 <p>
-
 The primary input file for the tool chain is a json file that contains an array of nodes and an array of edges between the nodes, in the following format:
 
 <pre class="shinglecode">
@@ -151,6 +253,63 @@ This distribution comes with one example graph, 'sampledata/random-graph_500000.
 
       </div>
     </center>
+
+  <script>
+    /*
+     * create an info component in the graph panel, here we use the supplied shingleInfoPanel.js
+     */
+    var theInfoData = new shingleInfoPanel();
+
+    /*
+     * create the graph
+     */
+    var myGraph = shingle.new({
+      // use the created element
+      el: document.getElementById("shinglecontainer"),
+      // supply info panel content
+      infoContentEl: theInfoData.el,
+      onClear: function() {
+        //
+        // clear the info panel
+        theInfoData.clear();
+      }, onFocus: function(quadid, nodeid, data) {
+        //
+        // when clicked on node in graph set this node in the info panel
+        theInfoData.setMainNode(quadid, nodeid, data);
+      }, onFocusRelatedNode: function(quadid, nodeid, data) {
+        //
+        // when clicked on node in graph this is called for each related node
+        // set the related nodes in the info panel
+        theInfoData.appendRelatedNode(quadid, nodeid, data);
+      }, onHoverIn: function(quadid, nodeid) {
+        //
+        // when hovered (mousover) on node in graph highlight in the info panel
+        theInfoData.highLightNode(quadid,nodeid);
+      }, onHoverOut: function() {
+        //
+        // when blur (mousout) on node in graph unhighlight in the info panel
+        theInfoData.unHighLightNode();
+      }
+    });                                        
+
+    /*
+     * set the info panel hover behaviour
+     */
+    theInfoData.onHover(function(quadId, nodeId) {
+      //
+      // highlight the hovered node in the graph
+      myGraph.hoverIn(quadId, nodeId);
+    });
+
+    /*
+     * set the info panel click behaviour
+     */
+    theInfoData.onClick(function(quadid, nodeid) {
+      //
+      // make the cliched node active in the graph
+      myGraph.changehighlightTo(quadid, nodeid);
+    });
+  </script>
 
   </body>
 </html>

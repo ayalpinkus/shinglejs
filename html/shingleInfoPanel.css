@@ -1,0 +1,26 @@
+.shingle-info {
+  background-color:#ffffff;
+  overflow:hidden;
+  position:absolute;
+  left:80%;
+  top:0;
+  width:20%;
+  z-index:100;
+  padding:0.125in;
+  border-top: 1px solid #e8e8e8;
+  border-left: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.shingle-info .shingle-info-node {
+    color:#007398;
+}
+
+.shingle-info .shingle-info-node.shingle-info-hovered {
+    color: #e9711c;
+}
+
+.shingle-info .shingle-info-node:hover {
+    cursor: pointer;
+    text-decoration: underline;
+}

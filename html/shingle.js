@@ -1,1988 +1,1448 @@
+var shingle = shingle || (function () {
 
-/////////////////////////////////////////////////////
-//
-// Begin editable parameters
-//
-//
+	var graph = function (settings) {
 
+		// Begin editable parameters
+		var options = settings || {},
+			defaults = {
+				// these are equal to the possible settings
+				// commented lines represent other option values
+				width: '2in',
+				height: '2in',
+				nodeField: "nodeid",
+				graphPath: null,
+				initialZoom: 20,
+				scrollZoomInitDelay: 400,
+				scrollZoom: true,
+				containerClass: 'shingle-container',
+				containerWithFocusClass: 'shingle-with-focussed-node',
+				scaleElClass: 'shingle-scaling',
+				translationElClass: 'shingle-translation',
+				nodeClass: 'shingle-node',
+				nodeTextClass: 'shingle-node-text',
+				mapClass: 'shingle-map',
+				nodeColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
+				defaultNodeColor: [214, 29, 79],
+				edgeColor: [213, 213, 213],
+				edgeHighlightColor: [0, 0, 0],
+				fontColor: [5, 87, 119, 0.6],
+				fontFamily: "sans",
+				infoSyncDelay: 100,
+				//lineType: "Straight",
+				lineType: "EllipticalArc",
+				debug: false,
+				debugQuads: false
+			};
 
-// node color based on community id
-function nodeColor(node,opacity)
-{
-  var colortuple = nodeColorTuple(node);
-  var r = colortuple[0];
-  var g = colortuple[1];
-  var b = colortuple[2];
-  return "rgba("+r+","+g+","+b+","+opacity+")";
-}
+		// global private vars
+		var nodeInfo, makeLineElement,
+			xmlns = "http://www.w3.org/2000/svg",
+			mapinfo = null,
+			graphs = {},
+			nodeRadiusScale = 1.0 / 100.0,
+			nodeEdgeRadiusScale = 1 / 500.0,
+			fontScale = 1.0 / 50.0,
+			minScale = 0.1,
+			maxScale = 0.5,
+			edgeWidthScale = 1 / 60.0,
+			quadsDrawn = {},
+			boundingrect, mfrmap, debugEl, zoom,
+			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
+			linescontainer, nodescontainer,
+			scalingEl, translationEl,
+			lastX = 0, lastY = 0,
+			startTranslateX = 0, startTranslateY = 0,
+			dragging = false,
+			svgCreated = false,
+			sfactor = 48,
+			KSymTableSize = 211,
+			scheduler, highlightScheduler,
+			nodemodeflagHighlighted = 1, nodemodeflagCentered = 2, nodemodeGraph = 0,
+			nodemodeHighlighted = nodemodeflagHighlighted,
+			nodemodeCentered = nodemodeflagHighlighted + nodemodeflagCentered,
+			currentScale = 0.1, currentTranslateX = 0, currentTranslateY = 0,
+			currentnodeid = null, currentHighlightedNode,
+			last_async_showmfrinfo = null,
+			infoDisplayAction = false;
 
+		// defaults
+		function initDefaults() {
+			for (var defaultEntry in defaults) {
+				if (defaults.hasOwnProperty(defaultEntry)) {
+					// set passed option or default
+					options[defaultEntry] = (typeof options[defaultEntry] === "undefined") ? defaults[defaultEntry] : options[defaultEntry];
+					// set if specified in container data atrribute
+					// note this will not be in camelcase
+					var attrName = 'data-' + defaultEntry.replace(/([A-Z])/g, '-$1').trim().toLowerCase(),
+						attrVal = options.el.getAttribute(attrName);
+					if(attrVal && attrVal.length) {
+						// convert none char options
+						if(defaults[defaultEntry]) {
 
-function nodeColorTuple(node)
-{
-  var communityid = node.community;
+							if(typeof(defaults[defaultEntry]) === "boolean") {
+								// boolean
+								if(attrVal.toLowerCase) {
+									attrVal = (attrVal.toLowerCase() == "true");
+								}
+							} else if(!isNaN(defaults[defaultEntry])) {
+								// numeric
+								attrVal = parseInt(attrVal);
+							}
+						}
+						options[defaultEntry] = attrVal;
+					}
+				}
+			}
 
+			// dynamic function based on line type
+			makeLineElement = (options.lineType == 'EllipticalArc') ? makeLineElementEllipticalArc : makeLineElementStraight;
+		}
 
-  switch (communityid % 10)
-  {
-  case 0:
-    return [240,188,0];
-  case 1:   
-    return [178,57,147];
-  case 2:   
-    return [39,204,122];
-  case 3:   
-    return [21,163,206];
-  case 4:   
-    return [235,84,54];
-  case 5:   
-    return [138,103,52];
-  case 6:   
-    return [255,116,116];
-  case 7:   
-    return [120,80,171];
-  case 8:   
-    return [48,179,179];
+		function ajaxGet(url, callback) {
+			var xmlhttp = new XMLHttpRequest();
+			xmlhttp.overrideMimeType("application/json");
 
-  case 9:   
-    return [211,47,91];
-  }
+			xmlhttp.onreadystatechange = function () {
+				if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+					callback && callback(xmlhttp.responseText);
+				}
+			};
 
-  return [214,29,79];
-}
+			xmlhttp.open("GET", url, true);
+			xmlhttp.send();
+		}
 
-function edgeColor(nodeA,nodeB)
-{
-  if (nodeA != null)
-  {
-    return nodeColor(nodeA,1);
-  }
-  else if (nodeB != null)
-  {
-    return nodeColor(nodeB,1);
-  }
-  return "rgb(213,213,213)";
-}
+		function rgbA(colorTuple) {
+			var r = colorTuple[0];
+			var g = colorTuple[1];
+			var b = colorTuple[2];
+			var a = colorTuple[3] || 1;
+			return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+		}
 
-function edgeHighlightColor(nodeA,nodeB)
-{
-  if (nodeA != null)
-  {
-    return nodeColor(nodeA,1);
-  }
-  else if (nodeB != null)
-  {
-    return nodeColor(nodeB,1);
-  }
-  return "rgb(0,0,0)";
-}
+		// node color based on community id
+		function nodeColor(node, opacity) {
+			return rgbA(nodeColorTuple(node));
+		}
 
+		function nodeColorTuple(node) {
+			var communityid = node.community,
+				colorCount = options.nodeColors.length;
 
-// nodegrootte en edge lijn dikte
-function calcNodeRadius(range)
-{
-//  return (0.2+0.8*range)*15;
-  return (0.2+0.8*range)*18;
-}
+			if (!colorCount)
+				return options.defaultNodeColor;
 
-var edgeWidth = 1;
+			return options.nodeColors[communityid % colorCount];
+		}
 
-// randen van de nodes
+		function edgeColor(nodeA, nodeB) {
+			if (nodeA != null) {
+				return nodeColor(nodeA, 1);
+			} else if (nodeB != null) {
+				return nodeColor(nodeB, 1);
+			}
+			return rgbA(options.edgeColor);
+		}
 
-function nodeEdgeWidth(range)
-{
- // return 1.5+5*range; //1.5;
- return 0.5+1*range;
-}
+		function edgeHighlightColor(nodeA, nodeB) {
+			if (nodeA != null) {
+				return nodeColor(nodeA, 1);
+			} else if (nodeB != null) {
+				return nodeColor(nodeB, 1);
+			}
+			return rgbA(options.edgeHighlightColor);
+		}
 
-function nodeEdgeColor(node)
-{
-  var colortuple = nodeColorTuple(node);
-  var r = colortuple[0];
-  var g = colortuple[1];
-  var b = colortuple[2];
-  return "rgba("+r+","+g+","+b+",1)";
+		// node size and edge width
+		function calcNodeRadius(range) {
+			//  return (0.2+0.8*range)*15;
+			return (0.2 + 0.8 * range) * 18;
+		}
 
-//  return "rgba(214,29,79,1)";
-}
+		// node stroke witdh
+		function nodeEdgeWidth(range) {
+			// return 1.5+5*range; //1.5;
+			return 0.5 + 1 * range;
+		}
 
-// Font voor de namen
-var fontColor = "rgba(5,87,119,0.6)";
-var fontSize = 18;
-var fontFamily = "sans";
+		function nodeEdgeColor(node) {
+			return rgbA(nodeColorTuple(node));
+		}
 
+		/* 
+		 * scheduler class
+		 */
+		function Scheduler(stepaftertimeout) {
+			this.tasks = [];
+			this.timer = null;
+			this.stepaftertimeout = stepaftertimeout;
 
-var allowPhysics = false;
+			this.addTask = function (task) {
+				this.tasks.push(task);
+				if (this.tasks.length == 1) {
+					this.reSchedule();
+				}
+			};
 
+			this.abandonAll = function () {
+				if (this.timer != null) {
+					clearTimeout(this.timer);
+					this.timer = null;
+					this.tasks = [];
+				}
+			}
 
-var selectedNodeColor = "#505050";
+			this.reSchedule = function () {
+				if (this.tasks.length > 0) {
+					this.timer = setTimeout(this.stepaftertimeout, 10);
+				} else {
+					this.timer = null;
+				}
+			};
 
-var startZoomControlValue = 5;
+			this.step = function () {
+				if (this.tasks.length > 0) {
+					var finished = this.tasks[0].call();
+					if (finished) {
+						this.tasks.splice(0, 1);
+					}
+				}
 
-//
-//
-// End editable parameters
-//
-/////////////////////////////////////////////////////
+				this.reSchedule();
+			};
 
+			return this;
+		}
 
-//var msie = (window.navigator.userAgent.indexOf("MSIE ") > 0);
+		function schedulerStep() {
+			scheduler.step();
+		}
 
-var nodefield = "nodeid";
+		function highlightschedulerStep() {
+			highlightScheduler.step();
+		}
 
-var xmlns = "http://www.w3.org/2000/svg";
+		function HashByte(h, c) {
+			h = (h * 16) + c;
+			h = h & 0xffffff;
+			return h;
+		}
 
-var graphPath="";
+		function HASHBIN(h) {
+			return (h % KSymTableSize);
+		}
 
-var mapinfo = null;
-var graphs = {};
+		function getHash(s) {
+			var i;
+			var h = 0;
 
-var nodeRadiusScale = 1.0/100.0;
-var nodeEdgeRadiusScale = 1/500.0;
-var fontScale = 1.0/50.0;
-var minScale = 0.1;
-var maxScale = 0.5;
+			for (i = 0; i < s.length; i++) {
+				h = HashByte(h, s.charCodeAt(i));
+			}
+			return HASHBIN(h);
+		}
 
-var edgeWidthScale = 1/60.0;
+		function drawnQuad(quadid) {
+			return quadsDrawn[quadid] || false;
+		}
 
-var debugQuads = false;
+		function containerWorldRect() {
+			var datarectPixels = boundingrect.getBoundingClientRect(),
+				containerRectPixels = mfrmap.getBoundingClientRect();
 
+			var scaleX = ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]) / (datarectPixels.right - datarectPixels.left),
+				scaleY = ((1.0 * mapinfo["quadtree"]["ymax"]) - mapinfo["quadtree"]["ymin"]) / (datarectPixels.bottom - datarectPixels.top);
 
+			var containerWidth = (containerRectPixels.right - containerRectPixels.left) * scaleX,
+				containerHeight = (containerRectPixels.bottom - containerRectPixels.top) * scaleY;
 
+			var movedWorldDeltaX = (datarectPixels.left) * scaleX - mapinfo["quadtree"]["xmin"],
+				movedWorldDeltaY = (datarectPixels.top) * scaleX - mapinfo["quadtree"]["ymin"];
 
-function Scheduler(stepaftertimeout)
-{
-  this.tasks = [];
-  this.timer = null;
-  this.stepaftertimeout = stepaftertimeout;
+			var containerX = (containerRectPixels.left) * scaleX - movedWorldDeltaX,
+				containerY = (containerRectPixels.top) * scaleY - movedWorldDeltaY;
 
+			return [containerX, containerY, containerX + containerWidth, containerY + containerHeight];
+		}
 
-  this.addTask = function(task)
-  {
-    this.tasks.push(task);
-    if (this.tasks.length == 1)
-    {
-      this.reSchedule();
-    }
-  };
+		function quadIntersects(screenrect, root) {
+			if (root["xmin"] < screenrect[2] && root["xmax"] > screenrect[0] &&
+				root["ymin"] < screenrect[3] && root["ymax"] > screenrect[1]) {
+				return true;
+			}
+			return false;
+		}
 
-  this.abandonAll = function()
-  {
-    if (this.timer != null)
-    {
-      clearTimeout(this.timer);
-      this.timer = null;
-      this.tasks = [];
-    }
-  }
+		function findQuadsToDraw() {
+			var screenrect = containerWorldRect(),
+				root = mapinfo["quadtree"],
+				quadid = "quad_";
 
-  this.reSchedule = function()
-  {
-    if (this.tasks.length > 0)
-    {
-      this.timer = setTimeout(this.stepaftertimeout , 10);
-    }
-    else
-    {
-      this.timer = null;
-    }
-  };
+			findQuadsToDrawRecursive(screenrect, root, quadid);
+		}
 
-  this.step = function()
-  {
-    if (this.tasks.length > 0)
-    {
-      var finished = this.tasks[0].call();
-      if (finished)
-      {
-        this.tasks.splice(0,1);
-      }
-    }
-    this.reSchedule();
+		function findQuadsToDrawRecursive(screenrect, root, quadid) {
+			if (quadIntersects(screenrect, root)) {
+				if (root["type"] == "Leaf") {
+					if (drawnQuad(quadid)) {
+						return;
+					}
+					loadQuad(quadid);
+				} else {
+					findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
+					findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+				}
+			}
+		}
 
-  };
+		function findQuadsToRemove() {
+			var i;
+			var screenrect = containerWorldRect(),
+				elements = document.getElementsByClassName('quadcontainer');
+
+			for (var i = 0; i < elements.length; i++) {
+				var el = elements[i];
+				var elid = el.id;
+				var header = graphs[elid].header;
+
+				if (header != null) {
+					if (!quadIntersects(screenrect, header)) {
+						el.parentNode.removeChild(el);
+						if(quadsDrawn[elid]) delete quadsDrawn[elid];
+						i--;
+					}
+				}
+			}
+
+			for (i = 1; i < scheduler.tasks.length; i++) {
+				if (scheduler.tasks[i].quadid != null) {
+					var graph = graphs[scheduler.tasks[i].quadid];
+					if (graph != null) {
+						var header = graph.header;
+						if (header != null) {
+							if (!quadIntersects(screenrect, header)) {
+								scheduler.tasks.splice(i, 1);
+								i--;
+							}
+						}
+					}
+				}
+			}
+
+			for (var quadid in graphs) {
+				if (graphs.hasOwnProperty(quadid)) {
+					var visible = false;
+					var graph = graphs[quadid];
+
+					if (graph == null) {
+						continue;
+					}
+
+					var header = graph.header;
+
+					if (quadIntersects(screenrect, header)) {
+						visible = true;
+					} else {
+
+						var referenced = graph["referenced"];
+						var j;
+						for (j = 0; j < referenced.length; j++)
+						{
+							var othergraph = graphs[referenced[j]];
+							if (othergraph == null) {
+								continue;
+							}
+
+							header = othergraph.header;
+
+							if (quadIntersects(screenrect, header)) {
+								visible = true;
+								break;
+							}
+						}
+					}
+					if (visible == false) {
+						graphs[quadid] = null;
+					}
+				}
+			}
+		}
+
+		function findPosition(nodeid) {
+
+			var has = getHash(nodeid),
+				url = options.graphPath + "table" + has + ".json";
+
+			ajaxGet(url, function(response) {
+				var table = JSON.parse(response);
+				var entry = table[nodeid];
+				if (entry)
+				{
+					currentTranslateX = -entry[0];
+					currentTranslateY = -entry[1];
+					currentnodeid = nodeid;
+				}
+				loadMapInfo();
+			});
+		}
+
+		function loadMapInfo() {
+
+			ajaxGet(options.graphPath + "mapinfo.json", function(response) {
+				
+				mapinfo = JSON.parse(response);
+
+				minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
+				maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
+				nodeRadiusScale = mapinfo["averageQuadWidth"] / 200.0;
+
+				if (nodeRadiusScale > 1)
+					nodeRadiusScale = 1;
+
+				nodeEdgeRadiusScale = mapinfo["averageLineLength"] / 200.0;
+				fontScale = mapinfo["averageLineLength"] / 80.0;
+				edgeWidthScale = mapinfo["averageLineLength"] * minScale / 10.0;
+
+				currentScale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0));
+
+				createBaseSvgDOM();
+
+				findQuadsToDraw();
+			});
+		}
+
+		function loadQuad(quadid) {
+			if (graphs[quadid] != null) {
+				if (!drawnQuad(quadid)) {
+					scheduler.addTask(new ScheduledAppendQuad(quadid));
+				}
+				return;
+			}
+
+			var json_url = options.graphPath + quadid + ".json";
+
+			ajaxGet(json_url, function(response) {
+				
+				var graph = JSON.parse(response);
+
+				graphs[quadid] = graph;
+				scheduler.addTask(new ScheduledAppendQuad(quadid));
+			});
+		}
+
+		function debugLog(str) {
+			if (options.debug) {
+				debugEl.innerHTML = str;
+			}
+		}
+
+		function handleMouseDown(evt) {
+
+			lastX = (evt.pageX - mfrmap.offsetLeft);
+			lastY = (evt.pageY - mfrmap.offsetTop);
+			startTranslateX = currentTranslateX;
+			startTranslateY = currentTranslateY;
+
+			var rect = boundingrect.getBoundingClientRect();
+
+			sfactor = (rect.right - rect.left) / ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]);
+
+			dragging = true;
+		}
+
+		function handleMouseMove(evt) {
+			if (dragging) {
+				var newX = (evt.pageX - mfrmap.offsetLeft),
+					newY = (evt.pageY - mfrmap.offsetTop);
+
+				currentTranslateX = startTranslateX + (newX - lastX) / sfactor;
+				currentTranslateY = startTranslateY + (newY - lastY) / sfactor;
+
+				//@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
+				debugLog("<p style=\"color:#ffffff\">" + 0 + "</p>");
+
+				/* 
+				 * Seems to be a bug in Firefox: when selecting node for first time, than drag map,
+				 * screen becomes white. Solution for now is to remove names just before it starts to drag the map.
+				 */
+				if (highlightednamescontainer != null) {
+					highlightednamescontainer.style.display = "none";
+				}
+				setSvgTranslations();
+			}
+		}
+
+		function handleMouseUp(evt) {
+			dragging = false;
+			findQuadsToDraw();
+			findQuadsToRemove();
+
+			if (highlightednamescontainer != null) {
+				highlightednamescontainer.style.display = "inherit";
+			}
+
+			var newX = (evt.pageX - mfrmap.offsetLeft),
+				newY = (evt.pageY - mfrmap.offsetTop);
+			if (Math.abs(newX - lastX) < 10 && Math.abs(newY - lastY) < 10) {
+				removeInfoAbout();
+
+				if(options.containerWithFocusClass) {
+					options.el.classList.remove(options.containerWithFocusClass);
+				}
+				options.onBlur && options.onBlur();
+				syncInfoDisplay(false);
+			}
+		}
+
+		function attachMouseEvents() {
+
+			var	inScroll = false;
+
+			if (mfrmap) {
+				mfrmap.addEventListener('mousedown', function (evt) {
+					handleMouseDown(evt);
+				}, false);
+
+				mfrmap.addEventListener('mousemove', function (evt) {
+					handleMouseMove(evt);
+				}, false);
+
+				mfrmap.addEventListener('mouseup', function (evt) {
+					handleMouseUp(evt);
+				}, false);
+
+				mfrmap.addEventListener('touchstart', function (evt) {
+					var touchobj = evt.changedTouches[0];
+					handleMouseDown(touchobj);
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				}, false);
+
+				mfrmap.addEventListener('touchmove', function (evt) {
+					var touchobj = evt.changedTouches[0];
+					handleMouseMove(touchobj);
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				}, false);
+
+				mfrmap.addEventListener('touchend', function (evt) {
+					var touchobj = evt.changedTouches[0];
+					handleMouseUp(touchobj);
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				}, false);
+
+				mfrmap.addEventListener('mouseleave', function (evt) {
+					dragging = false;
+					findQuadsToDraw();
+					findQuadsToRemove();
+				}, false);
+
+				var handleScroll = function (evt) {
+					if (inScroll)
+						return;
+
+					var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
+
+					if (delta) {
+						if (delta > 0) {
+							currentScale *= 1.1;
+						} else if (delta < 0) {
+							currentScale /= 1.1;
+						}
+
+						var mins = 1 / (minScale),
+							maxs = 1 / (maxScale);
+
+						if (currentScale < maxs){
+							currentScale = maxs;
+						}
+						if (currentScale > mins) {
+							currentScale = mins;
+						}
+
+						zoom.value = 100.0 * ((1 / currentScale) - minScale) / (maxScale - minScale);
+
+						setSvgScales();
+						findQuadsToDraw();
+						findQuadsToRemove();
+					}
+					return evt.preventDefault() && false;
+				};
+
+				function detectScrollAttrs(e) {
+
+					if (e.target.tagName !== 'svg') {
+						inScroll = setTimeout(function () {
+							clearInterval(inScroll);
+							inScroll = false;
+						}, options.scrollZoomInitDelay);
+					}
+				}
+				;
+
+				if (options.scrollZoom) {
+					var wheelEvent = "onwheel" in mfrmap ? "wheel" : document.onmousewheel !== undefined ? "mousewheel" : "DOMMouseScroll";
+					document.addEventListener(wheelEvent, detectScrollAttrs, false);
+					mfrmap.addEventListener(wheelEvent, handleScroll, false);
+				}
+			}
+		}
+
+		function createBaseSvgDOM() {
+			svgCreated = true;
+
+			var i,
+				xmin = mapinfo["quadtree"]["xmin"],
+				xmax = mapinfo["quadtree"]["xmax"],
+				ymin = mapinfo["quadtree"]["ymin"],
+				ymax = mapinfo["quadtree"]["ymax"];
+
+			var svg = document.createElementNS(xmlns, "svg");
+
+			svg.setAttributeNS(null, "viewBox", "" + xmin + " " + ymin + " " + (xmax - xmin) + " " + (ymax - ymin) + "");
+
+			options.el.style.width = options.width;
+			options.el.classList.add(options.containerClass);
+			mfrmap.style.width = options.width;
+
+			svg.setAttributeNS(null, "width", options.width);
+			svg.setAttributeNS(null, "height", options.height);
+
+			svg.setAttributeNS(null, "position", "absolute");
+			svg.setAttributeNS(null, "x", "0");
+			svg.setAttributeNS(null, "y", "0");
+
+			svg.style.overflow = "visible";
+
+			scalingEl = document.createElementNS(xmlns, "g");
+			svg.appendChild(scalingEl);
+			scalingEl.setAttributeNS(null, 'transform', "scale(" + currentScale + ")");
+			scalingEl.setAttributeNS(null, "class", options.scaleElClass);
+
+			translationEl = document.createElementNS(xmlns, "g");
+			scalingEl.appendChild(translationEl);
+
+			translationEl.setAttributeNS(null, 'transform', "translate(" + currentTranslateX + " " + currentTranslateY + ")");
+			translationEl.setAttributeNS(null, "class", options.translationElClass);
+
+			boundingrect = document.createElementNS(xmlns, "rect");
+
+			boundingrect.setAttributeNS(null, "x", "" + xmin);
+			boundingrect.setAttributeNS(null, "y", "" + ymin);
+
+			boundingrect.setAttributeNS(null, "width", "" + (xmax - xmin));
+			boundingrect.setAttributeNS(null, "height", "" + (ymax - ymin));
+			boundingrect.style.fill = "none";
+			/*
+			rect.style.stroke = "black";
+			rect.style.strokeWidth = 0.2 * edgeWidthScale;
+			rect.style.fillOpacity = "0";
+			rect.style.strokeOpacity = "0.5";
+			*/
+			translationEl.appendChild(boundingrect);
+
+			linescontainer = document.createElementNS(xmlns, "g");
+			translationEl.appendChild(linescontainer);
+
+			highlightedlinescontainer = document.createElementNS(xmlns, "g");
+			translationEl.appendChild(highlightedlinescontainer);
+
+			nodescontainer = document.createElementNS(xmlns, "g");
+			translationEl.appendChild(nodescontainer);
+
+			highlightednodescontainer = document.createElementNS(xmlns, "g");
+			translationEl.appendChild(highlightednodescontainer);
+
+			highlightednamescontainer = document.createElementNS(xmlns, "g");
+			translationEl.appendChild(highlightednamescontainer);
+
+			mfrmap.className = options.mapClass;
+			mfrmap.appendChild(svg);
+		}
+
+		function clearNodeNames(){
+			if (highlightednamescontainer == null) {
+				return;
+			}
+
+			while (highlightednamescontainer.firstChild) {
+				highlightednamescontainer.removeChild(highlightednamescontainer.firstChild);
+			}
+		}
+
+		function calcCurrentFontScale() {
+			var rect = mfrmap.getBoundingClientRect(),
+				startscale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0)),
+				size = (mapinfo["averageQuadWidth"] * (rect.bottom - rect.top) / 10000.0) * startscale / currentScale;
+
+			return size;
+		}
+
+		function showNodeName(quadid, node, elemid) {
+
+			var textfield = document.getElementById(elemid);
+			if (textfield == null) {
+				var size = calcCurrentFontScale();
+
+				if (highlightednamescontainer == null) {
+					return;
+				}
+
+				textfield = document.createElementNS(xmlns, "text");
+				textfield.setAttributeNS(null, "class", options.nodeTextClass);
+				textfield.setAttributeNS(null, "id", elemid);
+				textfield.setAttributeNS(null, "fill", rgbA(options.fontColor));
+				textfield.setAttributeNS(null, "font-family", options.fontFamily);
+				textfield.setAttributeNS(null, "font-size", size);
+				textfield.setAttributeNS(null, "data-nodeid", "");
+				highlightednamescontainer.appendChild(textfield);
+			}
+
+			if (textfield.getAttribute('data-nodeid') == node.nodeid) {
+				return;
+			}
+
+			var x = node.x,
+				y = node.y,
+				nodename = node.name,
+				range = nodeRange(node),
+				nodeRadius = calcNodeRadius(range) * nodeRadiusScale;
+
+			textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
+			textfield.setAttributeNS(null, "x", (x + 2 * nodeRadius));
+			textfield.setAttributeNS(null, "y", y);
+
+			while (textfield.firstChild) {
+				textfield.removeChild(textfield.firstChild);
+			}
+
+			var t = document.createTextNode(nodename);
+			textfield.appendChild(t);
+		}
+
+		function ScheduledAppendQuad(quadid) {
+			this.quadid = quadid;
+
+			this.call = function () {
+				appendSvgDOM(quadid);
+				return true;
+			}
+			return this;
+		}
+
+		function makeLineElementEllipticalArc(x1, y1, x2, y2) {
+			
+			var line = document.createElementNS(xmlns, "path"),
+				dx = x2 - x1, dy = y2 - y1,
+				len = Math.sqrt(dx * dx + dy * dy),
+				r = 2 * len,
+				sweep = (dy < 0) ? "0" : "1",
+				d = "M" + x1 + "," + y1 + " A" + r + "," + r + " 0 0 " + sweep + " " + x2 + "," + y2;
+
+			line.setAttributeNS(null, "d", "" + d);
+			line.setAttributeNS(null, "fill", "none");
+
+			return line;
+		}
+
+		function makeLineElementStraight(x1, y1, x2, y2) {
+
+			var line = document.createElementNS (xmlns, "line");
+			 
+			line.setAttributeNS (null, "x1", ""+x1);
+			line.setAttributeNS (null, "y1", ""+y1);
+			line.setAttributeNS (null, "x2", ""+x2);
+			line.setAttributeNS (null, "y2", ""+y2);
+
+			return line;
+		}
+
+		function nodeRange(node) {
+			var minsize = mapinfo["minsize"];
+			var maxsize = mapinfo["maxsize"];
+			var range = 0.5;
+			if (Math.abs(maxsize - minsize) > 0.00001)
+			{
+				range = (node.size - minsize) / (maxsize - minsize);
+			}
+			range = Math.pow(range, 1.25);
+			return range;
+		}
+
+		function AsyncEdges(quadid) {
+			this.quadid = quadid;
+			this.i = 0;
+			this.call = function ()
+			{
+				var graph = graphs[this.quadid];
+				if (graph == null) {
+					return true;
+				}
+				var nredges = graph["relations"].length;
+
+				if (nredges > 100) nredges = 100;
+
+				var glin = document.getElementById(this.quadid);
+				if (glin == null) {
+					return true;
+				}
+
+				var j;
+				for (j = 0; j < 100; j++) {
+					if (this.i >= nredges) {
+						return true;
+					}
+
+					var graphA = graphs[graph["relations"][this.i].quadA],
+						graphB = graphs[graph["relations"][this.i].quadB];
+					
+					if (graphA == null || graphB == null) {
+						this.i = this.i + 1;
+						continue;
+					}
+
+					var pos = graphA["idmap"][graph["relations"][this.i].nodeidA],
+						node1 = graphA["nodes"][pos],
+						x1 = graphA["nodes"][pos].x,
+						y1 = graphA["nodes"][pos].y;
+
+					pos = graphB["idmap"][graph["relations"][this.i].nodeidB];
+
+					var node2 = graphB["nodes"][pos],
+						x2 = graphB["nodes"][pos].x,
+						y2 = graphB["nodes"][pos].y,
+						edgeOpacity = 0.5,
+						line = makeLineElement(x1, y1, x2, y2);
+
+					line.id = this.quadid + "-edge-" + this.i;
+					line.style.stroke = "" + edgeColor(node1, node2);
+					line.setAttributeNS(null, "stroke-opacity", "" + edgeOpacity);
+
+					//		var msie = (window.navigator.userAgent.indexOf("MSIE ") > 0);
+					//      if (msie)
+					//      {
+					//			var edgeWidth = 1;
+					//        line.setAttributeNS (null, "stroke-width",""+(edgeWidth*edgeWidthScale)); 
+					//      }
+					//      else
+					//{
+					line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
+					line.setAttributeNS(null, "stroke-width", "1px");
+					//}
+
+					line.setAttributeNS(null, "stroke-linecap", "round");
+					glin.appendChild(line);
+
+					this.i = this.i + 1;
+				}
+				return (this.i >= nredges);
+			};
+			return this;
+		}
+
+		function MakeNodeElement(quadid, node, mode) {
+
+			var highlighted = ((mode & nodemodeflagHighlighted) != 0);
+			var centered = ((mode & nodemodeflagCentered) != 0);
+
+			var x = node.x;
+			var y = node.y;
+
+			var range = nodeRange(node);
+
+			var nodeRadius = calcNodeRadius(range) * nodeRadiusScale;
+			var nEdgeWid = 0;
+			var opacity;
+
+			var id;
+			if (highlighted) {
+				nodeRadius *= 1.5;
+				id = quadid + "-node-" + node.nodeid + "highlighted";
+				opacity = 1;
+			} else {
+				id = quadid + "-node-" + node.nodeid;
+				opacity = 0.6;
+			}
+			var color;
+
+			if (centered) {
+				color = rgbA([255, 255, 255]); // pure white
+				nEdgeWid = 5 * nodeEdgeWidth(range) * nodeEdgeRadiusScale;
+			} else {
+				color = nodeColor(node, opacity);
+			}
+
+			var circle = document.createElementNS(xmlns, "circle");
+			circle.setAttributeNS(null, "class", options.nodeClass);
+			circle.setAttributeNS(null, "id", id);
+			circle.setAttributeNS(null, "data-quadid", "" + quadid);
+			circle.setAttributeNS(null, "data-name", "" + node.name);
+			circle.setAttributeNS(null, "data-nodeid", "" + node.nodeid);
+			circle.setAttributeNS(null, "cx", "" + x);
+			circle.setAttributeNS(null, "cy", "" + y);
+			circle.setAttributeNS(null, "r", "" + nodeRadius);
+			circle.setAttributeNS(null, "stroke", "" + nodeEdgeColor(node));
+			circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
+			circle.setAttributeNS(null, "fill", "" + color);
+
+			circle.addEventListener('mouseenter', function (e) {
+				e.cancelBubble = true;
+				hoverIn(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+			});
+
+			circle.addEventListener('mouseleave', function (e) {
+				hoverOut();
+			});
+
+			circle.addEventListener('mousedown', function (e) {
+				e.cancelBubble = true;
+				showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+			});
+
+			circle.addEventListener('mouseup', function (e) {
+				//        e.cancelBubble=true;
+			});
+
+			circle.addEventListener('touchstart', function (evt) {
+				var e = evt.changedTouches[0];
+				showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+				evt.preventDefault();
+				evt.cancelBubble = true;
+			});
+
+			circle.addEventListener('touchmove', function (evt) {
+				var e = evt.changedTouches[0];
+				evt.preventDefault();
+				evt.cancelBubble = true;
+			});
+
+			circle.addEventListener('touchend', function (evt) {
+				var e = evt.changedTouches[0];
+				evt.preventDefault();
+				evt.cancelBubble = true;
+			});
+
+			return circle;
+		}
+
+		function appendSvgDOM(quadid) {
+			
+			if (drawnQuad(quadid)) {
+				return;
+			}
+
+			var graph = graphs[quadid];
+
+			if (graph == null) {
+				return;
+			}
+
+			var i;
+
+			var xmin = mapinfo["quadtree"]["xmin"],
+				xmax = mapinfo["quadtree"]["xmax"],
+				ymin = mapinfo["quadtree"]["ymin"],
+				ymax = mapinfo["quadtree"]["ymax"],
+				glin = document.createElementNS(xmlns, "g");
+
+			linescontainer.appendChild(glin);
+
+			glin.setAttributeNS(null, "class", "quadcontainer");
+			glin.setAttributeNS(null, "id", quadid);
+
+			if (options.debugQuads) {
+				var rect = document.createElementNS(xmlns, "rect");
+				rect.setAttributeNS(null, "x", "" + graph["header"]["xmin"]);
+				rect.setAttributeNS(null, "y", "" + graph["header"]["ymin"]);
+
+				rect.setAttributeNS(null, "width", "" + (graph["header"]["xmax"] - graph["header"]["xmin"]));
+				rect.setAttributeNS(null, "height", "" + (graph["header"]["ymax"] - graph["header"]["ymin"]));
+				rect.style.fill = "none";
+				rect.style.stroke = "black";
+				rect.style.strokeWidth = edgeWidthScale;
+				rect.style.fillOpacity = "0";
+				rect.style.strokeOpacity = "0.75";
+				glin.appendChild(rect);
+			}
+
+			scheduler.addTask(new AsyncEdges(quadid));
+
+			var gnod = document.createElementNS(xmlns, "g");
+			nodescontainer.appendChild(gnod);
+
+			quadsDrawn[quadid] = true;
+
+			gnod.setAttributeNS(null, "class", "quadcontainer");
+			gnod.setAttributeNS(null, "id", quadid);
+
+			for (i = 0; i < graph["nodes"].length; i++) {
+				var node = graph["nodes"][i];
+				var circle = MakeNodeElement(quadid, node, nodemodeGraph);
+				gnod.appendChild(circle);
+			}
+
+			if (highlightednodescontainer != null) {
+				if (highlightednodescontainer.firstChild == null) {
+					var lookup = graph["idmap"][currentnodeid];
+					if (lookup) {
+						showInfoAbout(quadid, currentnodeid);
+					}
+				}
+			}
+		}
+
+		function setSvgScales() {
+
+			// scale scaling layer
+			scalingEl.setAttribute('transform', 'scale(' + currentScale + ')');			
+
+			// scale texts (currently only one)
+			var size = calcCurrentFontScale(),
+				nodeTextEls = document.getElementsByClassName(options.nodeTextClass);
+
+			len = nodeTextEls.length;
+			for (i = 0; i < len; i++) {
+				var element = nodeTextEls[i];
+				element.setAttributeNS(null, "font-size", size);
+			}
+		}
+
+		function setSvgTranslations() {
+			translationEl.setAttribute('transform', 'translate(' + currentTranslateX + ' ' + currentTranslateY + ')');
+		}
+
+		function setSvgTransforms() {
+			setSvgScales();
+			setSvgTranslations();
+		}
+
+		function doscale(e) {
+			var value = parseInt(e.target.value);
+			currentScale = 1 / (minScale + (maxScale - minScale) * (value / 100.0));
+			setSvgScales();
+		}
+
+		function doscaleFinish(e) {
+			var value = parseInt(e.target.value);
+			currentScale = 1 / (minScale + (maxScale - minScale) * (value / 100.0));
+
+			setSvgScales();
+			findQuadsToDraw();
+			findQuadsToRemove();
+		}
+
+		function HighlightedNode() {
+			this.currentHighlightedId = null;
+			this.currentHighlightedIdHighlighted = null;
+			this.currentHighlightedQuadId = 0;
+			this.currentHighlightedIndex = 0;
+
+			this.unhighlight = function () {
+				if (this.currentHighlightedId != null) {
+					var graph = graphs[this.currentHighlightedQuadId];
+					if (graph == null) {
+						return;
+					}
+
+					var node = graph["nodes"][this.currentHighlightedIndex];
+					if (node == null) {
+						return;
+					}
+
+					var range = nodeRange(node),
+						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
+						circle = document.getElementById(this.currentHighlightedId);
+
+					if (circle) {
+						circle.setAttributeNS(null, "stroke-width", "0");
+					}
+
+					circle = document.getElementById(this.currentHighlightedIdHighlighted);
+					
+					if (circle) {
+						circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
+					}
+				}
+			};
+
+			this.sethighlighted = function (quadid, nodeid) {
+				var graph = graphs[quadid];
+				if (graph == null) {
+					return;
+				}
+				this.currentHighlightedQuadId = quadid;
+				this.currentnodeid = nodeid;
+
+				this.currentHighlightedIndex = graph["idmap"][nodeid];
+				if (this.currentHighlightedIndex == null) {
+					return;
+				}
+
+				this.currentHighlightedId = this.currentHighlightedQuadId + "-node-" + graph["nodes"][this.currentHighlightedIndex].nodeid;
+				this.currentHighlightedIdHighlighted = this.currentHighlightedId + "highlighted";
+			};
+
+			this.highlight = function () {
+				if (this.currentHighlightedId != null) {
+					var graph = graphs[this.currentHighlightedQuadId];
+					if (graph == null) {
+						return;
+					}
+
+					var node = graph["nodes"][this.currentHighlightedIndex];
+					if (node == null) {
+						return;
+					}
+
+					var range = nodeRange(node),
+						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
+						circle = document.getElementById(this.currentHighlightedId);
+
+					if (circle) {
+						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
+					}
+
+					circle = document.getElementById(this.currentHighlightedIdHighlighted);
+					if (circle) {
+						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
+					}
+				}
+			};
+			return this;
+		}
+
+		function getNodesData(quadid, nodeid) {
+			var graph = graphs[quadid],
+				data = null;
+
+			if (graph) {
+				var index = graph["idmap"][nodeid];
+				data = graph["nodes"][index];
+			}
+			return data;
+		}
+
+		function triggerClear() {
+			options.onClear && options.onClear();
+			clearNodeNames();
+		}
+
+		function changehighlightTo(quadid, nodeid) {
+
+			showInfoAbout(quadid, nodeid);
+
+			var graph = graphs[quadid];
+
+			if (graph) {
+				var index = graph["idmap"][nodeid];
+				var node = graph["nodes"][index];
+
+				var rect = containerWorldRect();
+				if (node.x < rect[0] ||
+					node.y < rect[1] ||
+					node.x > rect[2] ||
+					node.y > rect[3])
+				{
+					currentTranslateX = -node.x;
+					currentTranslateY = -node.y;
+					setSvgTranslations();
+					findQuadsToDraw();
+					findQuadsToRemove();
+				}
+			}
+		}
+
+		function async_showmfrinfo(quadid, nodeid) {
+
+			this.quadid = quadid;
+			this.nodeid = nodeid;
+			this.j = 0;
+
+			this.call = function () {
+
+				if (highlightedlinescontainer == null) {
+					return true;
+				}
+				if (highlightednodescontainer == null) {
+					return true;
+				}
+
+				var graph = graphs[this.quadid];
+
+				if (graph == null) {
+					return true;
+				}
+
+				var node1 = null;
+				var nodeIndex;
+
+				nodeIndex = graph["idmap"][this.nodeid];
+				node1 = graph["nodes"][nodeIndex];
+
+				if (highlightednodescontainer != null && node1 != null) {
+					var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered);
+					highlightednodescontainer.appendChild(circle);
+					clearNodeNames();
+					showNodeName(this.quadid, node1, "centerednodetext");
+				}
+
+				for (var i = 0; i < 100; i++) {
+					var node2 = null;
+					if (this.j >= graph["relations"].length) {
+						return true;
+					}
+
+					var quadid2 = quadid;
+
+					if (graph["relations"][this.j].nodeidA == nodeid) {
+						quadid2 = graph["relations"][this.j].quadB;
+						var graphB = graphs[quadid2];
+						if (graphB) {
+							nodeIndex = graphB["idmap"][graph["relations"][this.j].nodeidB];
+							node2 = graphB["nodes"][nodeIndex];
+							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
+						}
+					} else if (graph["relations"][this.j].nodeidB == nodeid) {
+						quadid2 = graph["relations"][this.j].quadA;
+						var graphA = graphs[quadid2];
+						if (graphA) {
+							nodeIndex = graphA["idmap"][graph["relations"][this.j].nodeidA];
+							node2 = graphA["nodes"][nodeIndex];
+							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
+						}
+					}
+
+					if (node1 != null && node2 != null) {
+
+						var x1 = node1.x, y1 = node1.y,
+							x2 = node2.x, y2 = node2.y,
+							edgeOpacity = 0.5,
+							line = makeLineElement(x1, y1, x2, y2);
+
+						line.style.stroke = "" + edgeHighlightColor(node1, node2);
+						line.setAttributeNS(null, "stroke-opacity", "1");
+
+						line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
+						line.setAttributeNS(null, "stroke-width", "2px");
+						line.setAttributeNS(null, "stroke-linecap", "round");
+						highlightedlinescontainer.appendChild(line);
+
+						if (highlightednodescontainer != null && node2 != null) {
+							var circle = MakeNodeElement(quadid2, node2, nodemodeHighlighted);
+							highlightednodescontainer.appendChild(circle);
+						}
+					}
+					this.j = this.j + 1;
+				}
+			};
+			return this;
+		}
+
+		function syncInfoDisplay(yesNo) {
+			if (options.infoContentEl) {
+				infoDisplayAction && clearTimeout(infoDisplayAction);
+				infoDisplayAction = setTimeout(function() {
+					if(!(nodeInfo.parentNode === options.el)) {
+						options.el.appendChild(nodeInfo);
+					}
+				}, options.infoSyncDelay);
+			}
+		}
+
+		function showmfrinfo(quadid, nodeid) {
+			if (last_async_showmfrinfo != null) {
+				last_async_showmfrinfo.j = 1000000;
+			}
+			triggerClear();
+
+			if(options.containerWithFocusClass) {
+				options.el.classList.add(options.containerWithFocusClass);
+			}
+			options.onFocus && options.onFocus(quadid, nodeid, getNodesData(quadid, nodeid));
+
+			syncInfoDisplay(true);
+
+			last_async_showmfrinfo = new async_showmfrinfo(quadid, nodeid);
+			highlightScheduler.addTask(last_async_showmfrinfo);
+		}
+
+		function removeInfoAbout() {
+
+			linescontainer.setAttributeNS(null, "opacity", "1");
+			nodescontainer.setAttributeNS(null, "opacity", "1");
+
+			currentHighlightedNode.unhighlight();
+
+			while (highlightedlinescontainer.firstChild) {
+				highlightedlinescontainer.removeChild(highlightedlinescontainer.firstChild);
+			}
+
+			while (highlightednodescontainer.firstChild) {
+				highlightednodescontainer.removeChild(highlightednodescontainer.firstChild);
+			}
+
+			triggerClear();
+		}
+
+		function showInfoAbout(quadid, nodeid) {
+			removeInfoAbout();
+			linescontainer.setAttributeNS(null, "opacity", "0.5");
+			nodescontainer.setAttributeNS(null, "opacity", "0.5");
+
+			currentHighlightedNode.highlight();
+			showmfrinfo(quadid, nodeid);
+		}
+
+		function hoverIn(quadid, nodeid) {
+			options.onHoverIn && options.onHoverIn(quadid, nodeid);
+
+			currentHighlightedNode.unhighlight();
+			currentHighlightedNode.sethighlighted(quadid, nodeid);
+			currentHighlightedNode.highlight();
+		}
+
+		function hoverOut() {
+			options.onHoverOut && options.onHoverOut();
+
+			currentHighlightedNode.unhighlight();
+		}
+
+		function init() {
+
+			var shinglecontainer = options.el;
+			if (!shinglecontainer) return ;
+
+			initDefaults();
+
+			if (!options.graphPath) return ;
+
+			scheduler = new Scheduler(schedulerStep);
+			highlightScheduler = new Scheduler(highlightschedulerStep)
+			currentHighlightedNode = new HighlightedNode();
+
+			mfrmap = document.createElement("div");
+			mfrmap.setAttribute("class", "shingle-unselectable");
+			shinglecontainer.appendChild(mfrmap);
+
+			zoom = document.createElement("input");
+			zoom.setAttribute("type", "range");
+			zoom.setAttribute("name", "zoom");
+			zoom.setAttribute("value", "" + options.initialZoom);
+			zoom.setAttribute("min", "0");
+			zoom.setAttribute("max", "100");
+			zoom.className = "shingle-zoom";
+			zoom.addEventListener("change", doscaleFinish)
+			zoom.addEventListener("input", doscale);
+			shinglecontainer.appendChild(zoom);
+
+			if (options.infoContentEl) {
+				nodeInfo = document.createElement("div");
+				nodeInfo.appendChild(options.infoContentEl);
+			}
+
+			if (options.debug) {
+				debugEl = document.createElement("div");
+				debugEl.className = "shingle-debug";
+				shinglecontainer.appendChild(debugEl);
+			}
+
+			attachMouseEvents();
+
+			var nodeid = null;
+
+			// some defaults / parameters may come from the url
+			if (document.location.search) {
+				var i;
+				var request = new Array();
+				var vals = document.location.search.substr(1).split("&");
+				for (i in vals) {
+					vals[i] = vals[i].replace(/\+/g, " ").split("=");
+					request[unescape(vals[i][0]).toLowerCase()] = unescape(vals[i][1]);
+				}
+
+				if (request[options.nodeField]) {
+					nodeid = request[options.nodeField];
+					var hashed = getHash(nodeid);
+				}
+				if (request["debug"]) {
+					options.debug = true;
+				}
+				if (request["debugquads"]) {
+					options.debugQuads = true;
+				}
+			}
+
+			if (nodeid) {
+				findPosition(nodeid);
+			} else {
+				loadMapInfo();
+			}
+
+			document.addEventListener('keyup', function KeyCheck(e) {
+				var KeyID = (window.event) ? event.keyCode : e.keyCode;
+				var actualkey = String.fromCharCode(KeyID);
+				if (actualkey == "a" || actualkey == "A") {
+					findQuadsToDraw();
+				} else if (actualkey == "r" || actualkey == "R") {
+					findQuadsToRemove();
+				}
+			});
+		}
+
+		if (options.el) {
+			init();
+		}
+
+		return {
+			hoverIn: hoverIn,
+			changehighlightTo: changehighlightTo
+		};
+
+	}, newGraph = function (settings) {
+		return new graph(settings);
+	}
+
+	return {
+		new : newGraph
+	}
+})();
+
+/*
+ * example to embed shingle
+ * 
  
-  return this;
-}
-
-
-
-
-function schedulerStep()
-{
-  scheduler.step();
-}
-var scheduler = new Scheduler(schedulerStep);
-
-function highlightschedulerStep()
-{
-  highlightscheduler.step();
-}
-var highlightscheduler = new Scheduler(highlightschedulerStep);
-
-
-
-
-var KSymTableSize = 211;
-function HashByte(h, c)
-{
-  h=(h*16)+c;
-  h = h & 0xffffff;
-  return h;
-}
-
-function HASHBIN(h)    
-{
-  return (h % KSymTableSize);
-}
-
-function getHash( s )
-{
-  var i;
-  var h=0;
-
-  for (i=0;i<s.length;i++)
-  {
-    h = HashByte( h, s.charCodeAt(i));
-  }
-  return HASHBIN(h);
-}
-
-
-
-
-
-
-
-function drawnQuad(quadid)
-{
-  var element = document.getElementById(quadid);
-  return element;
-}
-
-
-function containerWorldRect()
-{
-  var datarectPixels = document.getElementById('boundingrect').getBoundingClientRect();
-  var containerRectPixels = document.getElementById('mfrmap').getBoundingClientRect();
-
-  var scaleX = ((1.0*mapinfo["quadtree"]["xmax"])-mapinfo["quadtree"]["xmin"])/(datarectPixels.right-datarectPixels.left);
-  var scaleY = ((1.0*mapinfo["quadtree"]["ymax"])-mapinfo["quadtree"]["ymin"])/(datarectPixels.bottom-datarectPixels.top);
-
-  var containerWidth = (containerRectPixels.right-containerRectPixels.left)*scaleX;
-  var containerHeight = (containerRectPixels.bottom-containerRectPixels.top)*scaleY;
-
-  var movedWorldDeltaX = (datarectPixels.left)*scaleX-mapinfo["quadtree"]["xmin"];
-  var movedWorldDeltaY = (datarectPixels.top)*scaleX-mapinfo["quadtree"]["ymin"];
-
-  var containerX = (containerRectPixels.left)*scaleX - movedWorldDeltaX;
-  var containerY = (containerRectPixels.top)*scaleY - movedWorldDeltaY;
-  return [ containerX, containerY, containerX+containerWidth, containerY+containerHeight ];
-}
-
-
-function quadIntersects(screenrect,root)
-{
-  if (root["xmin"] < screenrect[2] && root["xmax"] > screenrect[0] && 
-      root["ymin"] < screenrect[3] && root["ymax"] > screenrect[1])
-  {
-    return true;
-  }
-  return false;
-}
-
-function findQuadsToDraw()
-{
-  var screenrect = containerWorldRect();
-  var root = mapinfo["quadtree"];
-  var quadid = "quad_";
-
-  findQuadsToDrawRecursive(screenrect,root,quadid);
-}
-
-function findQuadsToDrawRecursive(screenrect,root,quadid)
-{ 
-  if (quadIntersects(screenrect,root))
-  {
-    if (root["type"] == "Leaf")
-    {
-      if (drawnQuad(quadid))
-      {
-        return;
-      }
-      loadQuad(quadid);
-    }
-    else
-    {
-      findQuadsToDrawRecursive(screenrect,root["left"],(quadid+"l"));
-      findQuadsToDrawRecursive(screenrect,root["right"],(quadid+"r"));
-    }
-  } 
-}
-
-
-
-
-function findQuadsToRemove()
-{
-  var i;
-  var screenrect = containerWorldRect();
-  var elements = document.getElementsByClassName('quadcontainer');
-  for (var i = 0; i < elements.length; i++)
-  {
-    var el = elements[i];
-    var elid = el.id;
-    var header = graphs[elid].header;
-
-    if (header != null)
-    {
-      if (!quadIntersects(screenrect,header))
-      {
-        el.parentNode.removeChild(el);
-        i--;
-      }
-    }
-  }
-
-  for (i=1;i<scheduler.tasks.length;i++)
-  {
-    if (scheduler.tasks[i].quadid != null)
-    {
-      var graph = graphs[scheduler.tasks[i].quadid];
-      if (graph != null)
-      {
-        var header = graph.header;
-        if (header != null)
-        {
-          if (!quadIntersects(screenrect,header))
-          {
-            scheduler.tasks.splice(i,1);
-            i--;
-          }
-        }
-      }
-    }
-  }
-
-
-  for (var quadid in graphs) 
-  {
-    if (graphs.hasOwnProperty(quadid)) 
-    {
-      var visible = false;
-      var graph = graphs[quadid];
-      
-      if (graph == null)
-      {
-        continue;
-      }
-      
-      var header = graph.header;
-
-      if (quadIntersects(screenrect,header))
-      {
-        visible = true;
-      }
-      else
-      {
-        var referenced = graph["referenced"];
-        var j;
-        for (j=0;j<referenced.length;j++)
-        {
-	  var othergraph = graphs[referenced[j]];
-	  if (othergraph == null)
-	  {
-	    continue;
-	  }
-
-          header = othergraph.header;
-
-          if (quadIntersects(screenrect,header))
-          {
-            visible = true;
-	    break;
-          }
-        }
-      }
-      if (visible == false)
-      {
-        graphs[quadid] = null;
-      }
-    }
-  }
-
-}
-
-
-function findPosition(nodeid)
-{
-  var xmlhttp = new XMLHttpRequest();
-  xmlhttp.overrideMimeType("application/json");
-
-  xmlhttp.onreadystatechange = function() {
-    if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
-    {
-      var table = JSON.parse(xmlhttp.responseText);
-      var entry = table[nodeid];
-      if (entry)
-      {
-        currentTranslateX = -entry[0];
-        currentTranslateY = -entry[1];
-        currentnodeid   = nodeid;
-      }
-      loadMapInfo();
-    }
-  };
-
-  var has = getHash(nodeid);
-  var table = graphPath+"table"+has+".json";
-  xmlhttp.open("GET", table, true);
-  xmlhttp.send();
-}
-
-
-
-function loadMapInfo()
-{
-  var xmlhttp = new XMLHttpRequest();
-  xmlhttp.overrideMimeType("application/json");
-
-  xmlhttp.onreadystatechange = function() {
-    if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
-    {
-      mapinfo = JSON.parse(xmlhttp.responseText);
-
-      minScale = mapinfo["averageQuadWidth"]/mapinfo["totalMapWidth"];
-      maxScale = (5*mapinfo["averageQuadWidth"])/mapinfo["totalMapWidth"];
-
-      nodeRadiusScale = mapinfo["averageQuadWidth"]/200.0;
-
-//alert("nodeRadiusScale = "+nodeRadiusScale);
-
-if (nodeRadiusScale>1) nodeRadiusScale = 1;
-
-      nodeEdgeRadiusScale = mapinfo["averageLineLength"]/200.0;
-      fontScale = mapinfo["averageLineLength"]/80.0;
-      edgeWidthScale = mapinfo["averageLineLength"]*minScale/10.0;
-
-      currentScale = 1/(minScale + (maxScale-minScale)*(startZoomControlValue/100.0));
-
-      createBaseSvgDOM();
-
-      findQuadsToDraw();
-    }
-  };
-  xmlhttp.open("GET", graphPath+"mapinfo.json", true);
-  xmlhttp.send();
-}
-
-
-
-
-function loadQuad(quadid)
-{
-  if (graphs[quadid] != null)
-  {
-    if (!drawnQuad(quadid))
-    {
-      scheduler.addTask(new ScheduledAppendQuad(quadid));
-    }
-    return;
-  }
-
-  var json_url = graphPath+quadid+".json";
-  var xmlhttp = new XMLHttpRequest();
-  xmlhttp.overrideMimeType("application/json");
-
-  xmlhttp.onreadystatechange = function() {
-    if (xmlhttp.readyState == 4 && xmlhttp.status == 200)
-    {
-      var graph = JSON.parse(xmlhttp.responseText);
-      graphs[quadid] = graph;
-      scheduler.addTask(new ScheduledAppendQuad(quadid));
-    }
-  };
-  xmlhttp.open("GET", json_url, true);
-  xmlhttp.send();
-}
-
-
-function debug(str)
-{
-  var debugelement = document.getElementById('debug');
-  if (debugelement!= null)
-  {
-    debugelement.innerHTML = str;
-  }
-}
-
-
-var lastX=0;
-var lastY=0;
-var startTranslateX = 0;
-var startTranslateY = 0;
-var dragging = false;
-
-
-var sfactor = 48;
-
-function handleMouseDown(evt)
-{
-      lastX = (evt.pageX - mfrmap.offsetLeft);
-      lastY = (evt.pageY - mfrmap.offsetTop);
-      startTranslateX = currentTranslateX;
-      startTranslateY = currentTranslateY;
-
-      var rect = document.getElementById('boundingrect').getBoundingClientRect();
-      
-      sfactor = (rect.right-rect.left)/((1.0*mapinfo["quadtree"]["xmax"])-mapinfo["quadtree"]["xmin"]);
-
-      dragging=true;
-}
-
-function handleMouseMove(evt)
-{
-      if  (dragging)
-      {
-        var newX = (evt.pageX - mfrmap.offsetLeft);
-        var newY = (evt.pageY - mfrmap.offsetTop);
-        currentTranslateX = startTranslateX + (newX-lastX)/sfactor;
-        currentTranslateY = startTranslateY + (newY-lastY)/sfactor;
-
-//@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
-debug ("<p style=\"color:#ffffff\">"+0+"</p>");
-
-        /* Seems to be a bug in Firefox: when selecting node for first time, than drag map,
-	 * screen becomes white. Solution for now is to remove names just before it starts to drag the map.
-         */
-	{
-          var ghighlightednames = document.getElementById("highlightednamescontainer");
-          if (ghighlightednames != null)
-          {
-            ghighlightednames.style.display="none";
-          }
-        }
-        setSvgTranslations();
-      }
-}
-
-function handleMouseUp(evt)
-{
-      dragging=false;
-      findQuadsToDraw();
-      findQuadsToRemove();
-
-      {
-        var ghighlightednames = document.getElementById("highlightednamescontainer");
-        if (ghighlightednames != null)
-        {
-          ghighlightednames.style.display="inherit";
-        }
-      }
-
-      var newX = (evt.pageX - mfrmap.offsetLeft);
-      var newY = (evt.pageY - mfrmap.offsetTop);
-      if (Math.abs(newX-lastX)<10 && Math.abs(newY-lastY)<10)
-      {
-        removeInfoAbout();
-      }
-}
-
-function attachMouseEvents()
-{
-  var mfrmap = document.getElementById("mfrmap");
-  if (mfrmap)
-  {
-    mfrmap.addEventListener('mousedown',function(evt)
-    {
-      handleMouseDown(evt);
-    },false);
-
-    mfrmap.addEventListener('mousemove',function(evt)
-    {
-      handleMouseMove(evt);
-    },false);
-
-    mfrmap.addEventListener('mouseup',function(evt)
-    {
-      handleMouseUp(evt);
-    },false);
-
-
-    mfrmap.addEventListener('touchstart',function(evt)
-    {
-      var touchobj = evt.changedTouches[0];
-      handleMouseDown(touchobj);
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    },false);
-
-    mfrmap.addEventListener('touchmove',function(evt)
-    {
-      var touchobj = evt.changedTouches[0];
-      handleMouseMove(touchobj);
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    },false);
-
-    mfrmap.addEventListener('touchend',function(evt)
-    {
-      var touchobj = evt.changedTouches[0];
-      handleMouseUp(touchobj);
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    },false);
-
-
-
-
-
-
-    mfrmap.addEventListener('mouseleave',function(evt)
-    {
-      dragging=false;
-      findQuadsToDraw();
-      findQuadsToRemove();
-    },false);
-
-
-    var handleScroll = function(evt)
-    {
-      var delta = evt.wheelDelta ? evt.wheelDelta/40 : evt.detail ? -evt.detail : 0;
-      if (delta)
-      {
-        if (delta>0)
-	{
-          currentScale *= 1.1;
+ // create an info component, the default
+ // can be used by downloading shingleInfoPanel.js
+ var theInfoData = new shingleInfoPanel();
+ 
+ // create the graph
+ var myGraph = shingle.new({
+	el: document.getElementById("shinglecontainer"),
+	initialZoom: 20,
+	scrollZoomInitDelay: 777,
+	wheelZoom: true,
+	infoContentEl: theInfoData.el,
+	onClear: function() {
+		theInfoData.clear();
+	}, onFocus: function(quadid, nodeid, data) {
+		theInfoData.setMainNode(quadid, nodeid, data);
+	}, onFocusRelatedNode: function(quadid, nodeid, data) {
+		theInfoData.appendRelatedNode(quadid, nodeid, data);
+	}, onHoverIn: function(quadid, nodeid) {
+		theInfoData.highLightNode(quadid,nodeid);
+	}, onHoverOut: function() {
+		theInfoData.unHighLightNode();
 	}
-	else if (delta<0)
-	{
-          currentScale /= 1.1;
-	}
-
-
-        var mins = 1/(minScale);
-        var maxs = 1/(maxScale);
-        if (currentScale < maxs)
-	{
-	  currentScale = maxs;
-	}
-        if (currentScale > mins)
-	{
-	  currentScale = mins;
-	}
-
-
-        document.getElementById("zoom").value = 100.0*((1/currentScale)-minScale)/(maxScale-minScale);
-	
-        setSvgScales();
-        findQuadsToDraw();
-        findQuadsToRemove();
-      }
-      return evt.preventDefault() && false;
-    };
-    mfrmap.addEventListener('DOMMouseScroll',handleScroll,false);
-    mfrmap.addEventListener('mousewheel',handleScroll,false);
-  }
-}
-
-
-
-var svgCreated = false;
-
-
-
-function createBaseSvgDOM()
-{
-  svgCreated = true;
-
-  var i;
-  var xmin=mapinfo["quadtree"]["xmin"];
-  var xmax=mapinfo["quadtree"]["xmax"];
-  var ymin=mapinfo["quadtree"]["ymin"];
-  var ymax=mapinfo["quadtree"]["ymax"];
-
-  var svg = document.createElementNS (xmlns, "svg");
-
-  svg.setAttributeNS (null, "viewBox", ""+xmin+" "+ymin+" "+(xmax-xmin)+" "+(ymax-ymin)+"");
-
-  var svgwidth = "2in";
-  var svgheight = "2in";
-
-  var shinglecontainer = document.getElementById("shinglecontainer");
-  {
-    var setwidth = shinglecontainer.getAttribute("data-width");
-    var setheight = shinglecontainer.getAttribute("data-height");
-
-    if (setwidth != null)
-    {
-      svgwidth = setwidth;
-    }
-    if (setheight != null)
-    {
-      svgheight = setheight;
-    }
-    shinglecontainer.style.width = svgwidth;
-    var mfrmapElement = document.getElementById("mfrmap");
-    mfrmapElement.style.width = svgwidth;
-    var mfrinfoElement = document.getElementById("mfrinfo");
-    mfrinfoElement.style.maxHeight = svgheight;
-
-  }
-  svg.setAttributeNS (null, "width", svgwidth);
-  svg.setAttributeNS (null, "height", svgheight);
-
-  svg.setAttributeNS (null, "position", "absolute");
-  svg.setAttributeNS (null, "x", "0");
-  svg.setAttributeNS (null, "y", "0");
-
-  svg.style.overflow="visible";
-
-  var gscaling = document.createElementNS (xmlns, "g");
-  svg.appendChild (gscaling);
-  gscaling.setAttributeNS (null, 'transform', "scale("+currentScale+")");
-  gscaling.setAttributeNS(null, "class", "scaling");
-
-  var gtranslation = document.createElementNS (xmlns, "g");
-  gscaling.appendChild (gtranslation);
-
-  gtranslation.setAttributeNS (null, 'transform', "translate("+currentTranslateX+" "+currentTranslateY+")");
-  gtranslation.setAttributeNS(null, "class", "translation");
-  gtranslation.setAttributeNS(null, "id", "translation");
-
-  var rect = document.createElementNS (xmlns, "rect");
-  rect.setAttributeNS (null, "id", "boundingrect");
-
-  rect.setAttributeNS (null, "x", ""+xmin);
-  rect.setAttributeNS (null, "y", ""+ymin);
-
-  rect.setAttributeNS (null, "width", ""+(xmax-xmin));
-  rect.setAttributeNS (null, "height", ""+(ymax-ymin));
-  rect.style.fill="none";
-  rect.style.stroke="black";
-  rect.style.strokeWidth=0.2*edgeWidthScale;
-  rect.style.fillOpacity="0";
-  rect.style.strokeOpacity="0.5";
-  gtranslation.appendChild(rect);
-
-  var glines = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (glines);
-  glines.setAttributeNS (null, "id", "linescontainer");
-
-  var ghighlightedlines = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (ghighlightedlines);
-  ghighlightedlines.setAttributeNS (null, "id", "highlightedlinescontainer");
-
-  var gnodes = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (gnodes);
-  gnodes.setAttributeNS (null, "id", "nodescontainer");
-
-  var ghighlightednodes = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (ghighlightednodes);
-  ghighlightednodes.setAttributeNS (null, "id", "highlightednodescontainer");
-
-  var ghighlightednames = document.createElementNS (xmlns, "g");
-  gtranslation.appendChild (ghighlightednames);
-  ghighlightednames.setAttributeNS (null, "id", "highlightednamescontainer");
-
-  document.getElementById("mfrmap").appendChild(svg);   
-}
-
-
-function clearNodeNames()
-{
-  var ghighlightednames = document.getElementById("highlightednamescontainer");
-  if (ghighlightednames == null)
-  {
-    return;
-  }
-
-  while (ghighlightednames.firstChild) 
-  {
-    ghighlightednames.removeChild(ghighlightednames.firstChild);
-  }
-}
-
-function clearNodeName(elemid)
-{
-  var ghighlightednames = document.getElementById("highlightednamescontainer");
-  if (ghighlightednames == null)
-  {
-    return;
-  }
-
-  var textfield = document.getElementById(elemid);
-  if (textfield == null)
-  {
-    return;
-  }
-  ghighlightednames.removeChild(textfield);
-}
-
-
-function calcCurrentFontScale()
-{
-  var rect = document.getElementById('mfrmap').getBoundingClientRect();
-  var startscale = 1/(minScale + (maxScale-minScale)*(startZoomControlValue/100.0));
-  var size=(mapinfo["averageQuadWidth"]*(rect.bottom-rect.top)/10000.0)*startscale/currentScale;
-  return size;
-}
-
-
-function showNodeName(quadid,node,elemid)
-{
-  var textfield = document.getElementById(elemid);
-  if (textfield == null)
-  {
-    var size=calcCurrentFontScale();
-
-    var ghighlightednames = document.getElementById("highlightednamescontainer");
-    if (ghighlightednames == null)
-    {
-      return;
-    }
-    textfield = document.createElementNS (xmlns, "text");
-    textfield.setAttributeNS (null, "class", "authortext");
-    textfield.setAttributeNS (null, "id", elemid);
-    textfield.setAttributeNS (null, "fill",fontColor);
-    textfield.setAttributeNS (null, "font-family",fontFamily); 
-    textfield.setAttributeNS (null, "font-size",size);
-    textfield.setAttributeNS (null, "data-nodeid","");
-    ghighlightednames.appendChild(textfield);
-  }
-
-  if (textfield.getAttribute('data-nodeid') == node.nodeid)
-  {
-    return;
-  }
-
-  var minsize = mapinfo["minsize"];
-  var maxsize = mapinfo["maxsize"];
-  var x = node.x;
-  var y = node.y;
-  var nodename = node.name;
-
-  var range = nodeRange(node);
-
-  var nodeRadius = calcNodeRadius(range)*nodeRadiusScale;
-
-
-//  size = ""+size;
-/*
-  var range = 0.8;
-  if (Math.abs(maxsize-minsize) > 0.00001)
-  {
-    range = (node.size-minsize)/(maxsize-minsize);
-  }
-  range = Math.pow(range,1.25);
-  size = fontScale*((0.1+0.9*range)*fontSize);
-*/
-
-
-  textfield.setAttributeNS (null, "data-nodeid",node.nodeid);
-  textfield.setAttributeNS (null, "x",(x+2*nodeRadius)); 
-  textfield.setAttributeNS (null, "y",y);
-
-  while (textfield.firstChild) 
-  {
-    textfield.removeChild(textfield.firstChild);
-  }
-
-  var t = document.createTextNode(nodename);
-  textfield.appendChild(t);   
-}
-
-
-
-function ScheduledAppendQuad(quadid)
-{
-  this.quadid=quadid;
-  
-  this.call = function()
-  {
-    appendSvgDOM(quadid);
-    return true;
-  }
-  return this;
-}
-
-
-
-function makeLineElenent(x1,y1,x2,y2)
-{
-  var line = document.createElementNS (xmlns, "path");
-  var dx = x2-x1;
-  var dy = y2-y1;
-
-  var len = Math.sqrt(dx*dx+dy*dy);
-
-  var r = 2*len;
-  var sweep="1";
-
-  if (dy<0)
-  {
-    sweep = "0";
-  }
-  
-  var d = "M"+x1+","+y1+" A"+r+","+r+" 0 0 "+sweep+" "+x2+","+y2;
-
-  line.setAttributeNS (null, "d", ""+d);
-  line.setAttributeNS (null, "fill", "none");
-
-  return line;
-
-/*This is the simple straight line version
-
-  var line = document.createElementNS (xmlns, "line");
-  line.setAttributeNS (null, "x1", ""+x1);
-  line.setAttributeNS (null, "y1", ""+y1);
-  line.setAttributeNS (null, "x2", ""+x2);
-  line.setAttributeNS (null, "y2", ""+y2);
-  return line;
-
-*/
-}
-
-
-function nodeRange(node)
-{
-  var minsize = mapinfo["minsize"];
-  var maxsize = mapinfo["maxsize"];
-  var range = 0.5;
-  if (Math.abs(maxsize-minsize) > 0.00001)
-  {
-    range = (node.size-minsize)/(maxsize-minsize);
-  }
-  range = Math.pow(range,1.25);
-  return range;
-}    
-
-
-
-
-
-function AsyncEdges(quadid)
-{
-  this.quadid = quadid;
-  this.i = 0;
-  this.call = function()
-  {
-    var graph = graphs[this.quadid];
-    if (graph == null)
-    {
-      return true;
-    }
-    var nredges = graph["relations"].length;
-
-    if (nredges>100) nredges = 100;
-
-    var glin = document.getElementById(this.quadid);
-    if (glin == null)
-    {
-      return true;
-    }
-
-    var j;
-    for (j=0;j<100;j++)
-    {
-      if (this.i >= nredges)
-      {
-        return true;
-      }
-      var graphA = graphs[graph["relations"][this.i].quadA];
-      var graphB = graphs[graph["relations"][this.i].quadB];
-      if (graphA == null || graphB == null)
-      {
-        this.i = this.i + 1;
-        continue;
-      }
-      var pos = graphA["idmap"][graph["relations"][this.i].nodeidA];
-      var node1 = graphA["nodes"][pos];
-      var x1 = graphA["nodes"][pos].x;
-      var y1 = graphA["nodes"][pos].y;
-      pos = graphB["idmap"][graph["relations"][this.i].nodeidB];
-      var node2 = graphB["nodes"][pos];
-      var x2 = graphB["nodes"][pos].x;
-      var y2 = graphB["nodes"][pos].y;
-      var edgeOpacity = 0.5;
-
-      var line = makeLineElenent(x1,y1,x2,y2);
-
-      line.id = this.quadid+"-edge-"+this.i;
-      line.style.stroke=""+edgeColor(node1, node2);
-      line.setAttributeNS (null, "stroke-opacity", ""+edgeOpacity);
-
-//      if (msie)
-//      {
-//        line.setAttributeNS (null, "stroke-width",""+(edgeWidth*edgeWidthScale)); 
-//      }
-//      else
-      {
-        line.setAttributeNS (null, "vector-effect", "non-scaling-stroke");
-        line.setAttributeNS (null, "stroke-width","1px"); 
-      }
-
-
-      line.setAttributeNS (null, "stroke-linecap","round");
-      glin.appendChild(line);
-
-      this.i = this.i + 1;
-    }
-    return (this.i >= nredges);
-  };
-  return this;
-}
-
-
-var nodemodeflagHighlighted = 1;
-var nodemodeflagCentered = 2;
-
-var nodemodeGraph = 0;
-var nodemodeHighlighted = nodemodeflagHighlighted;
-var nodemodeCentered    = nodemodeflagHighlighted + nodemodeflagCentered;
-
-function MakeNodeElement(quadid,node,mode)
-{
-  var highlighted = ((mode&nodemodeflagHighlighted) != 0);
-  var centered = ((mode&nodemodeflagCentered) != 0);
-
-  var x = node.x;
-  var y = node.y;
-    
-  var range = nodeRange(node);
-
-  var nodeRadius = calcNodeRadius(range)*nodeRadiusScale;
-  var nEdgeWid = 0;
-  var opacity;
-
-  var id;
-  if (highlighted)
-  {
-    nodeRadius *= 1.5;
-    id = quadid+"-node-"+node.nodeid+"highlighted";
-    opacity = 1;
-  }
-  else
-  {
-    id = quadid+"-node-"+node.nodeid;
-    opacity = 0.6;
-  }
-  var color;
-  
-  if  (centered)
-  {
-    color = "rgb(255,255,255)";
-    nEdgeWid = 5*nodeEdgeWidth(range)*nodeEdgeRadiusScale;
-  }
-  else
-  {
-    color = nodeColor(node,opacity);
-  }
-
-
-  var circle = document.createElementNS (xmlns, "circle");
-  circle.setAttributeNS (null, "class", "authorNode");
-  circle.setAttributeNS (null, "id", id);
-  circle.setAttributeNS (null, "data-quadid",""+quadid); 
-  circle.setAttributeNS (null, "data-name",""+node.name); 
-  circle.setAttributeNS (null, "data-nodeid",""+node.nodeid); 
-  circle.setAttributeNS (null, "cx",""+x); 
-  circle.setAttributeNS (null, "cy",""+y);
-  circle.setAttributeNS (null, "r",""+nodeRadius); 
-  circle.setAttributeNS (null, "stroke",""+nodeEdgeColor(node)); 
-  circle.setAttributeNS (null, "stroke-width",""+nEdgeWid); 
-  circle.setAttributeNS (null, "fill",""+color);
-
-
-
-
-
-  circle.addEventListener('mouseenter', function(e) {
-        e.cancelBubble=true;
-        hoverIn(this.getAttribute('data-quadid'),this.getAttribute('data-nodeid'));
-    });
-
-  circle.addEventListener('mouseleave', function(e) {
-        hoverOut();
-    });
-
-  circle.addEventListener('mousedown', function(e) {
-        e.cancelBubble=true;
-        showInfoAbout(this.getAttribute('data-quadid'),this.getAttribute('data-nodeid'));
-    });
-
-  circle.addEventListener('mouseup', function(e) {
-//        e.cancelBubble=true;
-    });
-
-
-
-
-  circle.addEventListener('touchstart',function(evt)
-    {
-      var e = evt.changedTouches[0];
-      showInfoAbout(this.getAttribute('data-quadid'),this.getAttribute('data-nodeid'));
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    });
-
-  circle.addEventListener('touchmove',function(evt)
-    {
-      var e = evt.changedTouches[0];
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    });
-
-  circle.addEventListener('touchend',function(evt)
-    {
-      var e = evt.changedTouches[0];
-      evt.preventDefault();
-      evt.cancelBubble=true;
-    });
-
-
-
-  return circle;
-}
-
-
-function appendSvgDOM(quadid)
-{
-  if (drawnQuad(quadid))
-  {
-//    alert("would have added double");
-    return;
-  }
-
-  var graph = graphs[quadid];
-
-  if (graph == null)
-  {
-    return;
-  }
-
-  var i;
-
-  var xmin=mapinfo["quadtree"]["xmin"];
-  var xmax=mapinfo["quadtree"]["xmax"];
-  var ymin=mapinfo["quadtree"]["ymin"];
-  var ymax=mapinfo["quadtree"]["ymax"];
-
-  var glines = document.getElementById("linescontainer");
-  var gnodes = document.getElementById("nodescontainer");
-
-  var glin = document.createElementNS (xmlns, "g");
-  glines.appendChild (glin);
-
-  glin.setAttributeNS (null, "class", "quadcontainer");
-  glin.setAttributeNS (null, "id", quadid);
-
-  if (debugQuads)
-  {
-    rect = document.createElementNS (xmlns, "rect");
-    rect.setAttributeNS (null, "x", ""+graph["header"]["xmin"]);
-    rect.setAttributeNS (null, "y", ""+graph["header"]["ymin"]);
-
-    rect.setAttributeNS (null, "width", ""+(graph["header"]["xmax"]-graph["header"]["xmin"]));
-    rect.setAttributeNS (null, "height", ""+(graph["header"]["ymax"]-graph["header"]["ymin"]));
-    rect.style.fill="none";
-    rect.style.stroke="black";
-    rect.style.strokeWidth=edgeWidthScale;
-    rect.style.fillOpacity="0";
-    rect.style.strokeOpacity="0.75";
-    glin.appendChild(rect);
-  }
-
-  scheduler.addTask(new AsyncEdges(quadid));
-
-  var gnod = document.createElementNS (xmlns, "g");
-  gnodes.appendChild (gnod);
-
-  gnod.setAttributeNS (null, "class", "quadcontainer");
-  gnod.setAttributeNS (null, "id", quadid);
-
-  for (i=0;i<graph["nodes"].length;i++)
-  {
-    var node = graph["nodes"][i];
-    var circle = MakeNodeElement(quadid, node,nodemodeGraph);
-    gnod.appendChild(circle);
-  }
-
-  var highlightednodescontainer = document.getElementById('highlightednodescontainer');
-  if (highlightednodescontainer != null)
-  {
-    if (highlightednodescontainer.firstChild == null) 
-    {
-      var lookup = graph["idmap"][currentnodeid];
-      if (lookup)
-      {
-        showInfoAbout(quadid, currentnodeid);
-      }
-    }
-  }
-}
-
-
-
-
-
-var currentScale = 0.1;
-var currentTranslateX = 0;
-var currentTranslateY = 0;
-var currentnodeid = null;
-
-
-function setSvgScales()
-{
-  var i;
-  var len;
-  var authorTextEls = document.getElementsByClassName('scaling');
-  len = authorTextEls.length;
-  for (i = 0; i < len; i++)
-  {
-    var element = authorTextEls[i];
-    element.setAttribute('transform', 'scale('+currentScale+')');
-  }
-
-  var size = calcCurrentFontScale();
-  var authorTextEls = document.getElementsByClassName('authortext');
-  len = authorTextEls.length;
-  for (i = 0; i < len; i++)
-  {
-    var element = authorTextEls[i];
-    element.setAttributeNS (null, "font-size",size);
-  }
-
-}
-
-function setSvgTranslations()
-{
-  var i;
-  var len;
-  var authorTextEls = document.getElementsByClassName('translation');
-  len = authorTextEls.length;
-  for (i = 0; i < len; i++)
-  {
-    var element = authorTextEls[i];
-    element.setAttribute('transform', 'translate('+currentTranslateX+' '+currentTranslateY+')');
-  }
-}
-
-
-function setSvgTransforms()
-{
-  setSvgScales();
-  setSvgTranslations();
-}
-
-function doscale(value)
-{
-  currentScale = 1/(minScale + (maxScale-minScale)*(value/100.0));
-  setSvgScales();
-}
-function doscaleFinish(value)
-{
-  currentScale = 1/(minScale + (maxScale-minScale)*(value/100.0));
-
-  setSvgScales();
-  findQuadsToDraw();
-  findQuadsToRemove();
-}
-
-
-
-document.onkeyup = KeyCheck;       
-function KeyCheck(e)
-{  
-  var KeyID = (window.event) ? event.keyCode : e.keyCode;
-  var actualkey=String.fromCharCode(KeyID);
-  if (actualkey == "a" || actualkey == "A")
-  {
-    findQuadsToDraw();
-  }
-  else if (actualkey == "r" || actualkey == "R")
-  {
-    findQuadsToRemove();
-  }
-}
-
-
-
-function HighlightedNode()
-{
-  this.currentHighlightedId = null;
-  this.currentHighlightedIdHighlighted = null;
-  this.currentHighlightedQuadId = 0;
-  this.currentHighlightedIndex = 0;
-
-  this.unhighlight = function()
-  {
-    if (this.currentHighlightedId != null)
-    {
-      var graph = graphs[this.currentHighlightedQuadId];
-      if (graph == null)
-      {
-        return;
-      }
-      
-      var node = graph["nodes"][this.currentHighlightedIndex];
-      if (node == null)
-      {
-        return;
-      }
-
-      var range = nodeRange(node);
-
-      var nEdgeWid = nodeEdgeWidth(range)*nodeEdgeRadiusScale;
-      var circle = document.getElementById(this.currentHighlightedId);
-      if (circle)
-      {
-        circle.setAttributeNS (null, "stroke-width","0"); 
-      }
-      circle = document.getElementById(this.currentHighlightedIdHighlighted);
-      if (circle)
-      {
-        circle.setAttributeNS (null, "stroke-width",""+nEdgeWid); 
-      }
-    }
-  };
-
-  this.sethighlighted = function(quadid,nodeid)
-  {
-    var graph = graphs[quadid];
-    if (graph == null)
-    {
-      return;
-    }
-    this.currentHighlightedQuadId = quadid;
-    this.currentnodeid = nodeid;
-
-    this.currentHighlightedIndex = graph["idmap"][nodeid];
-    if (this.currentHighlightedIndex == null)
-    {
-      return;
-    }
-    this.currentHighlightedId = this.currentHighlightedQuadId+"-node-"+graph["nodes"][this.currentHighlightedIndex].nodeid;
-    this.currentHighlightedIdHighlighted = this.currentHighlightedId + "highlighted";
-  };
-  this.highlight = function()
-  {
-    if (this.currentHighlightedId != null)
-    {
-      var graph = graphs[this.currentHighlightedQuadId];
-      if (graph == null)
-      {
-        return;
-      }
-
-      var node = graph["nodes"][this.currentHighlightedIndex];
-      if (node == null)
-      {
-        return;
-      }
-
-      var range = nodeRange(node);
-      var nEdgeWid = nodeEdgeWidth(range)*nodeEdgeRadiusScale;
-
-      var circle = document.getElementById(this.currentHighlightedId);
-      if (circle)
-      {
-        circle.setAttributeNS (null, "stroke-width",""+5*nEdgeWid); 
-      }
-
-      circle = document.getElementById(this.currentHighlightedIdHighlighted);
-      if (circle)
-      {
-        circle.setAttributeNS (null, "stroke-width",""+5*nEdgeWid); 
-      }
-    }
-  };
-  return this;
-}
-
-
-var GetMoreOnNode = function(nodeid)
-{
-  return "";
-}
-
-function MFRInfoNodes()
-{
-  this.mainauthor = null;
-  this.list = [];
-  this.nrpages = 0;
-  this.currentpage = 0;
-
-  this.showLength = 12;
-  this.showNrPages = 5;
-
-  this.clear = function()
-  {
-    this.mainauthor = null;
-    this.list = [];
-    this.nrpages = 0;
-    this.currentpage = 0;
-
-
-    var mfrinfomainauthor = document.getElementById('mfrinfomainauthor');
-    mfrinfomainauthor.innerHTML = "";
-
-    var mfrinfocoauthors = document.getElementById('mfrinfocoauthors');
-    mfrinfocoauthors.innerHTML = "";
-
-    var mfrinfonodepages = document.getElementById('mfrinfonodepages');
-    mfrinfonodepages.innerHTML = "";
-
-    var mfrinfoedgeinfo = document.getElementById('mfrinfoedgeinfo');
-    mfrinfoedgeinfo.innerHTML = "";
-
-    var mfrinfo = document.getElementById('mfrinfo');
-    mfrinfo.style.display = "none";
-
-
-  };
-
-  this.setmainauthor = function(quadid,nodeid)
-  {
-    this.mainauthor = [quadid,nodeid];
-    var graph = graphs[quadid];
-    if (graph != null)
-    {
-      var index = graph["idmap"][nodeid];
-      var name=graph["nodes"][index].name;
-      
-      var moreOnNode = GetMoreOnNode(nodeid);
-
-      var mfrinfomainauthor = document.getElementById('mfrinfomainauthor');
-      mfrinfomainauthor.innerHTML = "<span class=\"coauthor\" id=\"author-"+nodeid+"\" onmouseover='javascript:hoverIn(\""+quadid+"\", \""+nodeid+"\")' onclick='javascript:changehighlightTo(\""+quadid+"\", \""+nodeid+"\")' >"+name+"</span> "+nodeid+"<br>" + moreOnNode + "<hr>";
-
-    var mfrinfo = document.getElementById('mfrinfo');
-    mfrinfo.style.display = "inherit";
-
-    }
-  };
-
-  this.appendCoAuthor = function(quadid,nodeid)
-  {
-    this.list.push([quadid,nodeid]);
-    if (this.list.length < this.showLength+1)
-    {
-      this.shownodes();
-    }
-    else;
-    {
-      this.nrpages = Math.floor((this.list.length+this.showLength-1)/this.showLength);
-      if (this.nrpages <= this.showNrPages)
-      {
-        this.showpages();
-      }
-    }
-
-  };
-
-
-
-
-  this.switchtopage = function(page)
-  {
-    if (page != this.currentpage)
-    {
-      this.currentpage = page;
-      this.shownodes();
-      this.showpages();
-    }
-  };
-
-  this.shownodes = function()
-  {
-    var i;
-    var startindex = this.currentpage*this.showLength;
-    var endindex = (this.currentpage+1)*this.showLength;
-    if (endindex>this.list.length)
-    {
-      endindex = this.list.length;
-    }
-    var innerhtml = "";
-    for (i=startindex;i<endindex;i++)
-    {
-      var quadid = this.list[i][0];
-      var nodeid = this.list[i][1];
-      var graph = graphs[quadid];
-      if (graph == null)
-      {
-        continue;
-      }
-      var index = graph["idmap"][nodeid];
-      var name=graph["nodes"][index].name;
-
-      innerhtml += "<span class=\"coauthor\" id=\"author-"+nodeid+"\" onmouseover='javascript:hoverIn(\""+quadid+"\", \""+nodeid+"\")' onclick='javascript:changehighlightTo(\""+quadid+"\", \""+nodeid+"\")' >"+name+"</span><br>";
-    }
-    var mfrinfocoauthors = document.getElementById('mfrinfocoauthors');
-    mfrinfocoauthors.innerHTML = innerhtml;
-
-  }
-
-
-  this.showpages = function()
-  {
-    var innerhtml = "";
-    if (this.nrpages > 1)
-    {
-      var i;
-      var startindex = this.currentpage-Math.floor(this.showNrPages/2);
-      if (startindex < 0)
-      {
-        startindex = 0;
-      }
-
-      var endindex = startindex + this.showNrPages;
-      if (endindex>this.nrpages)
-      {
-        endindex = this.nrpages;
-      }
-
-      for (i=startindex;i<endindex;i++)
-      {
-        if (i == this.currentpage)
-        {
-          innerhtml += "["+i+"] ";
-        }
-        else
-        {
-          innerhtml += "<a href=\"javascript:switchtopage("+i+")\">["+i+"]</a> ";
-        }
-      }
-    }
-    var mfrinfonodepages = document.getElementById('mfrinfonodepages');
-    mfrinfonodepages.innerHTML = innerhtml;
-  };
-
-  this.bringIntoView = function(quadid,nodeid)
-  {
-    var i;
-    for (i=0;i<this.list.length;i++)
-    {
-      if (this.list[i][0] == quadid && this.list[i][1] == nodeid)
-      {
-        this.switchtopage(Math.floor(i/this.showLength));
-	return;
-      }
-    }
-  };
-
-
-  return this;
-}
-
-
-var theInfoData = new MFRInfoNodes();
-
-function switchtopage(page)
-{
-  theInfoData.switchtopage(page);
-}
-
-
-function mfrinfoClear()
-{
-  theInfoData.clear();
-  clearNodeNames();
-}
-
-function mfrinfoAppendAuthor(quadid, nodeid)
-{
-  theInfoData.setmainauthor(quadid, nodeid);
-}
-
-function mfrinfoAppendCoAuthor(quadid, nodeid)
-{
-  theInfoData.appendCoAuthor(quadid, nodeid);
-}
-
-function changehighlightTo(quadid, nodeid)
-{
-  showInfoAbout(quadid, nodeid);
-
-  var graph = graphs[quadid];
-  if (graph)
-  {
-    var index = graph["idmap"][nodeid];
-    var node=graph["nodes"][index];
-
-    var rect = containerWorldRect();
-    if (node.x < rect[0] || 
-        node.y < rect[1] ||
-	node.x > rect[2] ||
-	node.y > rect[3])
-    {
-
-      currentTranslateX = -node.x;
-      currentTranslateY = -node.y;
-      setSvgTranslations();
-      findQuadsToDraw();
-      findQuadsToRemove();
-    }
-  }
-}
-
-
-
-
-var currentHighlightedNode = new HighlightedNode();
-
-
-
-
-
-
-
-function async_showmfrinfo(quadid, nodeid)
-{
-  this.quadid = quadid;
-  this.nodeid = nodeid;
-  this.j = 0;
-
-  this.call = function()
-  {
-    var ghighlightedlines = document.getElementById("highlightedlinescontainer");
-    var ghighlightednodes = document.getElementById("highlightednodescontainer");
-
-    if (ghighlightedlines == null)
-    {
-      return true;
-    }
-    if (ghighlightednodes == null)
-    {
-      return true;
-    }
-
-    var graph = graphs[this.quadid];
-
-    if (graph == null)
-    {
-      return true;
-    }
-
-    var node1 = null;
-    var nodeIndex;
-  
-    nodeIndex = graph["idmap"][this.nodeid];
-    node1 = graph["nodes"][nodeIndex];
-
-    if (ghighlightednodes != null && node1 != null)
-    {
-      var circle = MakeNodeElement(this.quadid,node1,nodemodeCentered);
-      ghighlightednodes.appendChild(circle);
-      clearNodeNames();
-      showNodeName(this.quadid,node1, "centerednodetext");
-    }
-
-    var i;
-    for (i=0;i<100;i++)
-    {
-      var node2 = null;
-      if (this.j >= graph["relations"].length)
-      {
-        return true;
-      }
-
-      var quadid2 = quadid;
-
-      if (graph["relations"][this.j].nodeidA == nodeid)
-      {
-        quadid2 = graph["relations"][this.j].quadB;
-        var graphB = graphs[quadid2];
-        if (graphB)
-        {
-          nodeIndex = graphB["idmap"][graph["relations"][this.j].nodeidB];
-          node2 = graphB["nodes"][nodeIndex];
-          mfrinfoAppendCoAuthor(quadid2, node2.nodeid ); // graph["relations"][this.j].nodeidB
-        }
-      }
-      else if (graph["relations"][this.j].nodeidB == nodeid)
-      {
-        quadid2 = graph["relations"][this.j].quadA;
-        var graphA = graphs[quadid2];
-        if (graphA)
-        {
-          nodeIndex = graphA["idmap"][graph["relations"][this.j].nodeidA];
-          node2 = graphA["nodes"][nodeIndex];
-          mfrinfoAppendCoAuthor(quadid2, node2.nodeid  ); // graph["relations"][this.j].nodeidA 
-        }
-      }
-
-      if (node1 != null && node2 != null)
-      {
-        var x1 = node1.x;
-        var y1 = node1.y;
-
-        var x2 = node2.x;
-        var y2 = node2.y;
-        var edgeOpacity = 0.5;
-
-        var line = makeLineElenent(x1,y1,x2,y2);
-
-        line.style.stroke=""+edgeHighlightColor(node1,node2);
-        line.setAttributeNS (null, "stroke-opacity", "1");
-
-        line.setAttributeNS (null, "vector-effect", "non-scaling-stroke");
-        line.setAttributeNS (null, "stroke-width","2px"); 
-        line.setAttributeNS (null, "stroke-linecap","round");
-        ghighlightedlines.appendChild(line);
-
-        if (ghighlightednodes != null && node2 != null)
-	{
-          var circle = MakeNodeElement(quadid2,node2,nodemodeHighlighted);
-          ghighlightednodes.appendChild(circle);
-	}
-
-      }
-      this.j = this.j + 1;
-
-    }
-  };
-  return this;
-}
-
-
-
-
-
-
-
-var last_async_showmfrinfo = null;
-
-function showmfrinfo(quadid, nodeid)
-{
-
-  if (last_async_showmfrinfo != null)
-  {
-    last_async_showmfrinfo.j = 1000000;
-  }
-  mfrinfoClear();
-  mfrinfoAppendAuthor(quadid, nodeid);
-
-  last_async_showmfrinfo = new async_showmfrinfo(quadid, nodeid);
-  highlightscheduler.addTask(last_async_showmfrinfo);
-}
-
-function removeInfoAbout()
-{
-  var glines = document.getElementById("linescontainer");
-  var gnodes = document.getElementById("nodescontainer");
-
-  glines.setAttributeNS (null, "opacity", "1");
-  gnodes.setAttributeNS (null, "opacity", "1");
-
-  currentHighlightedNode.unhighlight();
-
-  var highlightedlinescontainer = document.getElementById('highlightedlinescontainer');
-  while (highlightedlinescontainer.firstChild) 
-  {
-    highlightedlinescontainer.removeChild(highlightedlinescontainer.firstChild);
-  }
-
-  var highlightednodescontainer = document.getElementById('highlightednodescontainer');
-  while (highlightednodescontainer.firstChild) 
-  {
-    highlightednodescontainer.removeChild(highlightednodescontainer.firstChild);
-  }
-
-  mfrinfoClear();
-}
-
-
-
-function showInfoAbout(quadid, nodeid)
-{
-  removeInfoAbout();
-
-  var glines = document.getElementById("linescontainer");
-  var gnodes = document.getElementById("nodescontainer");
-  glines.setAttributeNS (null, "opacity", "0.5");
-  gnodes.setAttributeNS (null, "opacity", "0.5");
-  
-  currentHighlightedNode.highlight();
-  showmfrinfo(quadid, nodeid);
-}
-
-var higlightedLine = null;
-
-
-function hoverIn(quadid,nodeid)
-{
-  theInfoData.bringIntoView(quadid,nodeid)
-
-  currentHighlightedNode.unhighlight();
-  currentHighlightedNode.sethighlighted(quadid,nodeid);
-  currentHighlightedNode.highlight();
-
-  if (higlightedLine)
-  {
-    var element = document.getElementById(higlightedLine);
-    {
-      if (element)
-      {
-        element.style.color ="#007398";
-      }
-    }
-    higlightedLine = null;
-  }
-  higlightedLine = "author-"+nodeid;
-  var element = document.getElementById(higlightedLine);
-  {
-    if (element)
-    {
-      element.style.color ="#e9711c";
-    }
-  }
-
-/*
-  var graph = graphs[quadid];
-  if (graph != null)
-  {
-    var nodeIndex = graph["idmap"][nodeid];
-    var node = graph["nodes"][nodeIndex];
-    if (node != null)
-    {
-      showNodeName(quadid,node,"highlightingnode");
-    }
-  }
-*/
-}
-
-function hoverOut()
-{
-/*
-  clearNodeName("highlightingnode");
-*/
-
-  if (higlightedLine)
-  {
-    var element = document.getElementById(higlightedLine);
-    {
-      if (element)
-      {
-        element.style.color ="#007398";
-      }
-    }
-    higlightedLine = null;
-  }
-
-  currentHighlightedNode.unhighlight();
-}
-
-
-
-
-var prevOnLoad_graph = window.onload;
-window.onload=onLoad_graph;
-function onLoad_graph()
-{
-  if (prevOnLoad_graph != null)
-  {
-    prevOnLoad_graph();
-  }
-
-  var shinglecontainer = document.getElementById("shinglecontainer");
-
-  var set_nodefield = shinglecontainer.getAttribute("data-nodefield");
-  if (set_nodefield != null)
-  {
-    nodefield = set_nodefield;
-  }
-//alert("nodefield = "+nodefield);
-
-  var set_debugQuads = shinglecontainer.getAttribute("data-debug-quads");
-  if (set_debugQuads != null)
-  {
-    if (set_debugQuads == "true")
-    {
-      debugQuads = set_debugQuads;
-    }
-  }
-
-  graphPath = shinglecontainer.getAttribute("data-graph-path");
-  if (graphPath == null)
-  {
-    graphPath = "";
-  }
-
-  if (shinglecontainer != null)
-  {
-    var mfrmap = document.createElement("div");
-    mfrmap.setAttribute("class", "unselectable");
-    mfrmap.setAttribute("id", "mfrmap");
-    shinglecontainer.appendChild(mfrmap);
-
-    var zoom =  document.createElement("input");
-    zoom.setAttribute("id", "zoom");
-    zoom.setAttribute("type", "range");
-    zoom.setAttribute("name", "zoom");
-    zoom.setAttribute("value", ""+startZoomControlValue);
-    zoom.setAttribute("min", "0");
-    zoom.setAttribute("max", "100");
-    zoom.setAttribute("onchange", "doscaleFinish(this.value)");
-    zoom.setAttribute("oninput", "doscale(this.value)");
-    shinglecontainer.appendChild(zoom);
-
-    var mfrinfo =  document.createElement("div");
-    mfrinfo.setAttribute("id", "mfrinfo");
-    mfrinfo.style.display = "none";
-    shinglecontainer.appendChild(mfrinfo);
-    
-    var mfrinfomainauthor =  document.createElement("div");
-    mfrinfomainauthor.setAttribute("id", "mfrinfomainauthor");
-    mfrinfo.appendChild(mfrinfomainauthor);
-
-    var mfrinfocoauthors =  document.createElement("div");
-    mfrinfocoauthors.setAttribute("id", "mfrinfocoauthors");
-    mfrinfo.appendChild(mfrinfocoauthors);
-
-    var mfrinfonodepages =  document.createElement("div");
-    mfrinfonodepages.setAttribute("id", "mfrinfonodepages");
-    mfrinfo.appendChild(mfrinfonodepages);
-
-    var mfrinfoedgeinfo =  document.createElement("div");
-    mfrinfoedgeinfo.setAttribute("id", "mfrinfoedgeinfo");
-    mfrinfo.appendChild(mfrinfoedgeinfo);
-
-
-    var debug =  document.createElement("div");
-    debug.setAttribute("id", "debug");
-    shinglecontainer.appendChild(debug);
-
-    attachMouseEvents();
-
-    var nodeid = null;
-    if (document.location.search)
-    {
-      var i;
-      var request = new Array();
-      var vals=document.location.search.substr(1).split("&");
-      for (i in vals) 
-      {
-        vals[i] = vals[i].replace(/\+/g, " ").split("=");
-        request[unescape(vals[i][0])] = unescape(vals[i][1]);
-      }
-      if (request[nodefield] != null)
-      {
-        nodeid = request[nodefield];
-        var hashed = getHash( nodeid );
-      }
-      if (request["debugquads"] != null)
-      {
-        debugQuads = true;
-      }
-      
-    }
-
-    if (nodeid)
-    {
-      findPosition(nodeid);
-    }
-    else
-    {
-      loadMapInfo();
-    }
-  }
-}
+ });                                        
+ 
+ // set the info hover behaviour
+ theInfoData.onHover(function(quadId, nodeId) {
+	myGraph.hoverIn(quadId, nodeId);
+ });
+ 
+ theInfoData.onClick(function(quadid, nodeid) {
+	 myGraph.changehighlightTo(quadid, nodeid);
+ });
+ 
+ */
