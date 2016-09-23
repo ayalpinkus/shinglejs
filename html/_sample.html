@@ -1,9 +1,72 @@
 <html>
   <head>
+    <link rel="stylesheet" href="shinglesite.css">
     <link rel="stylesheet" href="shingle.css">
+    <link rel="stylesheet" href="shingleInfoPanel.css">
     <script src="shingle.js" type="text/javascript"></script>
+    <script src="shingleInfoPanel.js" type="text/javascript"></script>
   </head>
   <body>
     <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-nodefield="nodenumber" ></div>
+
+
+
+  <script>
+    /*
+     * create an info component in the graph panel, here we use the supplied shingleInfoPanel.js
+     */
+    var theInfoData = new shingleInfoPanel();
+
+    /*
+     * create the graph
+     */
+    var myGraph = shingle.new({
+      // use the created element
+      el: document.getElementById("shinglecontainer"),
+      // supply info panel content
+      infoContentEl: theInfoData.el,
+      onClear: function() {
+        //
+        // clear the info panel
+        theInfoData.clear();
+      }, onFocus: function(quadid, nodeid, data) {
+        //
+        // when clicked on node in graph set this node in the info panel
+        theInfoData.setMainNode(quadid, nodeid, data);
+      }, onFocusRelatedNode: function(quadid, nodeid, data) {
+        //
+        // when clicked on node in graph this is called for each related node
+        // set the related nodes in the info panel
+        theInfoData.appendRelatedNode(quadid, nodeid, data);
+      }, onHoverIn: function(quadid, nodeid) {
+        //
+        // when hovered (mousover) on node in graph highlight in the info panel
+        theInfoData.highLightNode(quadid,nodeid);
+      }, onHoverOut: function() {
+        //
+        // when blur (mousout) on node in graph unhighlight in the info panel
+        theInfoData.unHighLightNode();
+      }
+    });                                        
+
+    /*
+     * set the info panel hover behaviour
+     */
+    theInfoData.onHover(function(quadId, nodeId) {
+      //
+      // highlight the hovered node in the graph
+      myGraph.hoverIn(quadId, nodeId);
+    });
+
+    /*
+     * set the info panel click behaviour
+     */
+    theInfoData.onClick(function(quadid, nodeid) {
+      //
+      // make the cliched node active in the graph
+      myGraph.changehighlightTo(quadid, nodeid);
+    });
+  </script>
+
   </body>
 </html>
