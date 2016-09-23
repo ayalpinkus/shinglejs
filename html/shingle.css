@@ -1,68 +1,40 @@
-
-.unselectable {
-  -webkit-user-select: none;  /* Chrome all / Safari all */
-  -moz-user-select: none;     /* Firefox all */
-  -ms-user-select: none;      /* IE 10+ */
-  user-select: none;          /* Likely future */      
-}
-
-#shinglecontainer
-{
+.shingle-container {
   position:relative;
 }
 
-#mfrmap
-{
+.shingle-container .shingle-info {
+    display: none;
+}
+
+.shingle-container.shingle-with-focussed-node .shingle-info {
+    display: inherit;
+}
+
+.shingle-map {
   overflow:hidden;
-  background-color:#ffffff; // #f8f8f8;
+  background-color:#ffffff;
   position:absolute; 
   left:0in;
   top:0in;
 }
 
-#zoom
-{
+.shingle-zoom {
   position:absolute;
   left:0.25in;
   top:0.125in;
   z-index:100;
 }
 
-#debug
-{
+.shingle-debug {
   position:absolute;
   left:0.25in;
   top:5.75in;
   z-index:100;
 }
 
-#mfrinfo
-{
-  background-color:#ffffff;
-  overflow:hidden;
-  position:absolute;
-  left:80%;
-  top:0;
-  width:20%;
-  z-index:100;
-  padding:0.125in;
-/*
-  border: 0.05in solid #e8e8e8;
-*/
-
-  border-top: 1px solid #e8e8e8;
-  border-left: 1px solid #e8e8e8;
-  border-bottom: 1px solid #e8e8e8;
-
+.shingle-unselectable {
+  -webkit-user-select: none;  /* Chrome all / Safari all */
+  -moz-user-select: none;     /* Firefox all */
+  -ms-user-select: none;      /* IE 10+ */
+  user-select: none;          /* Likely future */      
 }
-
-.a, .coauthor
-{
-  color:#007398;
-}
-
-.coauthor:hover
-{
-  text-decoration: underline;
-}
-
