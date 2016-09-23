@@ -120,7 +120,10 @@ int xcompare(const void *a, const void *b
 #endif // USE_QSORT_R
 
 //printf("ax=%f, bx=%f\n",nds->nodes[indexa].x, nds->nodes[indexb].x);
-  return (nds->nodes[indexb].x > nds->nodes[indexa].x);
+  double diff = (nds->nodes[indexb].x - nds->nodes[indexa].x);
+  if (diff>0) return 1;
+  else if (diff<0) return -1;
+  else return 0;
 }
 
 
@@ -138,7 +141,11 @@ int ycompare(const void *a, const void *b
 #else // USE_QSORT_R
   MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
 #endif // USE_QSORT_R
-  return (nds->nodes[indexb].y > nds->nodes[indexa].y);
+  double diff = (nds->nodes[indexb].y - nds->nodes[indexa].y);
+  if (diff>0) return 1;
+  else if (diff<0) return -1;
+  else return 0;
+
 }
 
 void MFRQuadTree::BuildTree(int maxNodesPerQuad)
