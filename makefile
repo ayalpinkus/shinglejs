@@ -63,6 +63,13 @@ $(BIN_PATH)json2bin.a: src/json2bin.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MF
 $(BIN_PATH)bin2json.a: src/bin2json.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o src/MFRUtils.h src/jsontokenizer.h src/graph.h
 	g++  -o $(BIN_PATH)bin2json.a src/bin2json.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o
 
+extra_src: $(BIN_PATH)json2array_jacek.a
+
+$(BIN_PATH)json2array_jacek.a: extra_src/json2array_jacek.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o $(SHINGLE_PATH)src/MFRUtils.h $(SHINGLE_PATH)src/jsontokenizer.h $(SHINGLE_PATH)src/graph.h
+	g++  -I$(SHINGLE_INCLUDE) -o $(BIN_PATH)json2array_jacek.a extra_src/json2array_jacek.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o
+
+
+
 release-src:
 	cp $(SHINGLE_PATH)html/*.css $(RELEASE_PATH)
 	cp $(SHINGLE_PATH)html/*.js $(RELEASE_PATH)
