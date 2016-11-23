@@ -15,6 +15,9 @@
       </center>
     </div>
     <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-node-field="nodenumber" ></div>
+    <!-- with use of the node mapServer.js
+    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="data-graph-path="http://127.0.0.1:8088/shinglejs/random-graph_500000/"/" data-node-field="nodenumber" ></div>
+    -->
 
     <div class = "containerpadding" ></div>
 
@@ -176,6 +179,37 @@ More advanced parameters:
   <li><span class="shinglecode">fontFamily: "sans"</span> - font to use for text in the graph</li>
   <li><span class="shinglecode">fontColor: [r, g, b, a]</span> - color for text in the graph, specified as array of rgb or rgba values</li>  
   <li><span class="shinglecode">nodeColors: [[r, g, b, a], .. ]</span> - color scheme, array of colors to use in the graph for the communities, the colors are specified as arrays of rgb or rgba values, and cycles if the number of communities exceeds the number of colors</li>
+  <li><span class="shinglecode">renderWhenNodeNotFound</span> - when false no map is displayed, default true</li>
+  <li><span class="shinglecode">selectNodes</span> - can the user select nodes by clicking or touching them? default true</li>
+  <li><span class="shinglecode">panning</span> - dragging the map is allowed? default true</li>
+  <li><span class="shinglecode">zoomSlider</span> - can the user zoom in / out using a zoomslider? default false</li>
+  <li><span class="shinglecode">staticMap</span> - disable zooming, panning and selecting nodes, default false</li>
+  <li><span class="shinglecode">showRelatedNodeNames</span> - false, true (display related node names), 'hover' (display on hover of related node)</li>
+  <li><span class="shinglecode">fontSize</span> - option to set a fixed fontsize in px for display, default 18</li>
+  <li><span class="shinglecode">textGrow</span> - will the text grow when the zoomlevel increases above initialzoom?</li>default true</li>
+  <li><span class="shinglecode">textShrink</span> - will the text shrink when the zoomlevel increases above initialzoom? default false</li>
+  <li>textGrow and textShrink increase or decrease the font size displayed linear to the zoomlevel</li>
+  <li><span class="shinglecode">relatedFontSize</span> - font size for related nodes names when displayed</li>
+  <li><span class="shinglecode">translateOffsetX</span> - added SVG CSS X translate offset</li>
+  <li><span class="shinglecode">translateOffsetY</span> - added SVG CSS Y translate offset</li>
+</ul>
+</p>
+
+<p>
+More advanced callback function parameters:
+<ul>
+  <li><span class="shinglecode">onNodeNotFound</span> - callback function called when node specified by nodeid parameter was not found</li>
+  <li><span class="shinglecode">onQuadsDrawn</span> - called each time quads are drawn</li>
+  <li><span class="shinglecode">onFirstQuadDrawn</span> - called the first time a quad is drawn</li>
+</ul>
+</p>
+
+<p>
+Functions to use with the shingle object (returned by shingle.new):
+<ul>
+  <li><span class="shinglecode">zoomIn</span> - zoom in using step supplied in option zoomStep, default 5%</li>
+  <li><span class="shinglecode">zoomOut</span> - zoom out using step supplied in option zoomStep, default 5%</li>
+  <li><span class="shinglecode">zoomReset</span> - reset zoom level to option intitialZoom</li>
 </ul>
 </p>
 
