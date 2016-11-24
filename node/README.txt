@@ -14,4 +14,8 @@ To run in the background you can use the & and optionally the nohup to keep it r
 
 Or install like you would install any other deamon process.
 
-Don't forget: in your frontend, use the host:port/uri sepcified in the config file.
+Don't forget: in your frontend, use the host:port/uri specified in the config file.
+
+NOTE
+- you can run multiple instances for different graphs (different config files)
+- make sure each mapServer instance runs on a different port, a port which is not yet in use on your server
