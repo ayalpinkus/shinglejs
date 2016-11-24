@@ -7,17 +7,30 @@ var shingle = shingle || (function () {
 			defaults = {
 				// these are equal to the possible settings
 				// commented lines represent other option values
-				width: '2in',
+				translateOffsetX: 0,
+				translateOffsetY: 0,
+				width: '100%',
 				height: '2in',
 				nodeField: "nodeid",
+				nodeId: "",
+				renderWhenNodeNotFound: true,
 				graphPath: null,
 				initialZoom: 20,
+				selectNodes: true,
+				panning: true,
+				staticMap: false,
+				zoomSlider: true,
+				zoomStep: 5,
 				scrollZoomInitDelay: 400,
 				scrollZoom: true,
+				showRelatedNodeNames: false,
+				//showRelatedNodeNames: true,
+				//showRelatedNodeNames: 'hover',
 				containerClass: 'shingle-container',
 				containerWithFocusClass: 'shingle-with-focussed-node',
 				scaleElClass: 'shingle-scaling',
 				translationElClass: 'shingle-translation',
+				boundingRectElClass: 'shingle-bounding-rect',
 				nodeClass: 'shingle-node',
 				nodeTextClass: 'shingle-node-text',
 				mapClass: 'shingle-map',
@@ -27,6 +40,10 @@ var shingle = shingle || (function () {
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
 				fontFamily: "sans",
+				fontSize: 18,
+				relatedNodesFontSize: 18,
+				textGrow: true,
+				textShrink: false,
 				infoSyncDelay: 100,
 				//lineType: "Straight",
 				lineType: "EllipticalArc",
@@ -41,8 +58,8 @@ var shingle = shingle || (function () {
 			graphs = {},
 			nodeRadiusScale = 1.0 / 100.0,
 			nodeEdgeRadiusScale = 1 / 500.0,
-			fontScale = 1.0 / 50.0,
-			minScale = 0.1,
+			fontScale = null,
+			minScale = 0.01,
 			maxScale = 0.5,
 			edgeWidthScale = 1 / 60.0,
 			quadsDrawn = {},
@@ -60,10 +77,14 @@ var shingle = shingle || (function () {
 			nodemodeflagHighlighted = 1, nodemodeflagCentered = 2, nodemodeGraph = 0,
 			nodemodeHighlighted = nodemodeflagHighlighted,
 			nodemodeCentered = nodemodeflagHighlighted + nodemodeflagCentered,
-			currentScale = 0.1, currentTranslateX = 0, currentTranslateY = 0,
+			currentScale = 0.1, startScale, currentTranslateX = 0, currentTranslateY = 0,
 			currentnodeid = null, currentHighlightedNode,
 			last_async_showmfrinfo = null,
-			infoDisplayAction = false;
+			infoDisplayAction = false,
+			drawQ = {},
+			firstQuadDrawn = false,
+			zoomLevel = false,
+			svg = document.createElementNS(xmlns, "svg");
 
 		// defaults
 		function initDefaults() {
@@ -96,6 +117,12 @@ var shingle = shingle || (function () {
 
 			// dynamic function based on line type
 			makeLineElement = (options.lineType == 'EllipticalArc') ? makeLineElementEllipticalArc : makeLineElementStraight;
+
+			if(options.staticMap) {
+				options.selectNodes = false;
+				options.panning = false;
+				options.zoomSlider = false;
+			}
 		}
 
 		function ajaxGet(url, callback) {
@@ -273,12 +300,39 @@ var shingle = shingle || (function () {
 			return false;
 		}
 
+		function findQuadsNodeJs(screenrect) {
+
+			//var url = 'http://localhost:8081/shinglejs-local/data/auth25_01_tiled/datasets/elsevier-data/findQuads' +
+			var url = options.graphPath + 'findQuads' +
+					'?xmin=' + screenrect[0] +
+					'&ymin=' + screenrect[1] +
+					'&xmax=' + screenrect[2] +
+					'&ymax=' + screenrect[3];
+
+			ajaxGet(url, function(response) {
+				if(response) {
+					var quads = JSON.parse(response);
+					if(quads.length) {
+						for (var i = 0; i < quads.length; i++) {
+							if (!drawnQuad(quads[i])) {
+								loadQuad(quads[i]);
+							}
+						};
+					}
+				}
+			});
+		}
+
 		function findQuadsToDraw() {
 			var screenrect = containerWorldRect(),
 				root = mapinfo["quadtree"],
 				quadid = "quad_";
 
-			findQuadsToDrawRecursive(screenrect, root, quadid);
+			if(mapinfo.loadFromBackend) {
+				findQuadsNodeJs(screenrect);
+			} else {
+				findQuadsToDrawRecursive(screenrect, root, quadid);
+			}
 		}
 
 		function findQuadsToDrawRecursive(screenrect, root, quadid) {
@@ -298,12 +352,12 @@ var shingle = shingle || (function () {
 		function findQuadsToRemove() {
 			var i;
 			var screenrect = containerWorldRect(),
-				elements = document.getElementsByClassName('quadcontainer');
+				elements = svg.getElementsByClassName('quadcontainer');
 
 			for (var i = 0; i < elements.length; i++) {
-				var el = elements[i];
-				var elid = el.id;
-				var header = graphs[elid].header;
+				var el = elements[i],
+					elid = el.id,
+					header = graphs[elid].header;
 
 				if (header != null) {
 					if (!quadIntersects(screenrect, header)) {
@@ -373,41 +427,61 @@ var shingle = shingle || (function () {
 			var has = getHash(nodeid),
 				url = options.graphPath + "table" + has + ".json";
 
+			if(mapinfo.loadFromBackend) {
+				url += '?nodeid=' + nodeid;
+			}
+
 			ajaxGet(url, function(response) {
-				var table = JSON.parse(response);
-				var entry = table[nodeid];
-				if (entry)
-				{
+				var table = JSON.parse(response)
+					entry = table[nodeid],
+					doRender = true;
+
+				if (entry) {
 					currentTranslateX = -entry[0];
 					currentTranslateY = -entry[1];
 					currentnodeid = nodeid;
+					options.onNodeFound && options.onNodeFound();
+				} else {
+					doRender = options.renderWhenNodeNotFound;
+					options.onNodeNotFound && options.onNodeNotFound();
 				}
-				loadMapInfo();
+				if(doRender) {
+					renderMap();
+				}
 			});
 		}
 
-		function loadMapInfo() {
+		function renderMap() {
+
+			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
+			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
+			nodeRadiusScale = mapinfo["averageQuadWidth"] / 200.0;
+
+			if (nodeRadiusScale > 1)
+				nodeRadiusScale = 1;
+
+			// calculate edge radius depending on average quad width
+			nodeEdgeRadiusScale = (2 / 3 * mapinfo["averageQuadWidth"]) / 200.0;
+			edgeWidthScale = (2 / 3 * mapinfo["averageQuadWidth"]) * minScale / 10.0;
+
+			currentScale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0));
+			startScale = currentScale;
+
+			createBaseSvgDOM();
+
+			findQuadsToDraw();
+		}
+
+		function loadMapInfo(nodeid) {
 
 			ajaxGet(options.graphPath + "mapinfo.json", function(response) {
-				
+
 				mapinfo = JSON.parse(response);
-
-				minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
-				maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
-				nodeRadiusScale = mapinfo["averageQuadWidth"] / 200.0;
-
-				if (nodeRadiusScale > 1)
-					nodeRadiusScale = 1;
-
-				nodeEdgeRadiusScale = mapinfo["averageLineLength"] / 200.0;
-				fontScale = mapinfo["averageLineLength"] / 80.0;
-				edgeWidthScale = mapinfo["averageLineLength"] * minScale / 10.0;
-
-				currentScale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0));
-
-				createBaseSvgDOM();
-
-				findQuadsToDraw();
+				if(nodeid) {
+					findPosition(nodeid)
+				} else {
+					renderMap();
+				}
 			});
 		}
 
@@ -499,87 +573,90 @@ var shingle = shingle || (function () {
 			var	inScroll = false;
 
 			if (mfrmap) {
-				mfrmap.addEventListener('mousedown', function (evt) {
-					handleMouseDown(evt);
-				}, false);
 
-				mfrmap.addEventListener('mousemove', function (evt) {
-					handleMouseMove(evt);
-				}, false);
+				if (options.panning) {
 
-				mfrmap.addEventListener('mouseup', function (evt) {
-					handleMouseUp(evt);
-				}, false);
+					mfrmap.addEventListener('mousedown', function (evt) {
+						handleMouseDown(evt);
+					}, false);
 
-				mfrmap.addEventListener('touchstart', function (evt) {
-					var touchobj = evt.changedTouches[0];
-					handleMouseDown(touchobj);
-					evt.preventDefault();
-					evt.cancelBubble = true;
-				}, false);
+					mfrmap.addEventListener('mousemove', function (evt) {
+						handleMouseMove(evt);
+					}, false);
 
-				mfrmap.addEventListener('touchmove', function (evt) {
-					var touchobj = evt.changedTouches[0];
-					handleMouseMove(touchobj);
-					evt.preventDefault();
-					evt.cancelBubble = true;
-				}, false);
+					mfrmap.addEventListener('mouseup', function (evt) {
+						handleMouseUp(evt);
+					}, false);
 
-				mfrmap.addEventListener('touchend', function (evt) {
-					var touchobj = evt.changedTouches[0];
-					handleMouseUp(touchobj);
-					evt.preventDefault();
-					evt.cancelBubble = true;
-				}, false);
+					mfrmap.addEventListener('touchstart', function (evt) {
+						var touchobj = evt.changedTouches[0];
+						handleMouseDown(touchobj);
+						evt.preventDefault();
+						evt.cancelBubble = true;
+					}, false);
 
-				mfrmap.addEventListener('mouseleave', function (evt) {
-					dragging = false;
-					findQuadsToDraw();
-					findQuadsToRemove();
-				}, false);
+					mfrmap.addEventListener('touchmove', function (evt) {
+						var touchobj = evt.changedTouches[0];
+						handleMouseMove(touchobj);
+						evt.preventDefault();
+						evt.cancelBubble = true;
+					}, false);
 
-				var handleScroll = function (evt) {
-					if (inScroll)
-						return;
+					mfrmap.addEventListener('touchend', function (evt) {
+						var touchobj = evt.changedTouches[0];
+						handleMouseUp(touchobj);
+						evt.preventDefault();
+						evt.cancelBubble = true;
+					}, false);
 
-					var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
-
-					if (delta) {
-						if (delta > 0) {
-							currentScale *= 1.1;
-						} else if (delta < 0) {
-							currentScale /= 1.1;
-						}
-
-						var mins = 1 / (minScale),
-							maxs = 1 / (maxScale);
-
-						if (currentScale < maxs){
-							currentScale = maxs;
-						}
-						if (currentScale > mins) {
-							currentScale = mins;
-						}
-
-						zoom.value = 100.0 * ((1 / currentScale) - minScale) / (maxScale - minScale);
-
-						setSvgScales();
+					mfrmap.addEventListener('mouseleave', function (evt) {
+						dragging = false;
 						findQuadsToDraw();
 						findQuadsToRemove();
-					}
-					return evt.preventDefault() && false;
-				};
+					}, false);
 
-				function detectScrollAttrs(e) {
+					var handleScroll = function (evt) {
+						if (inScroll)
+							return;
 
-					if (e.target.tagName !== 'svg') {
-						inScroll = setTimeout(function () {
-							clearInterval(inScroll);
-							inScroll = false;
-						}, options.scrollZoomInitDelay);
-					}
+						var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
+
+						if (delta) {
+							if (delta > 0) {
+								currentScale *= 1.1;
+							} else if (delta < 0) {
+								currentScale /= 1.1;
+							}
+
+							var mins = 1 / (minScale),
+								maxs = 1 / (maxScale);
+
+							if (currentScale < maxs){
+								currentScale = maxs;
+							}
+							if (currentScale > mins) {
+								currentScale = mins;
+							}
+
+							zoom.value = 100.0 * ((1 / currentScale) - minScale) / (maxScale - minScale);
+
+							setSvgScales();
+							findQuadsToDraw();
+							findQuadsToRemove();
+						}
+						return evt.preventDefault() && false;
+					};
+
+					function detectScrollAttrs(e) {
+
+						if (e.target.tagName !== 'svg') {
+							inScroll = setTimeout(function () {
+								clearInterval(inScroll);
+								inScroll = false;
+							}, options.scrollZoomInitDelay);
+						}
+					};
 				}
-				;
 
 				if (options.scrollZoom) {
 					var wheelEvent = "onwheel" in mfrmap ? "wheel" : document.onmousewheel !== undefined ? "mousewheel" : "DOMMouseScroll";
@@ -597,8 +674,6 @@ var shingle = shingle || (function () {
 				xmax = mapinfo["quadtree"]["xmax"],
 				ymin = mapinfo["quadtree"]["ymin"],
 				ymax = mapinfo["quadtree"]["ymax"];
-
-			var svg = document.createElementNS(xmlns, "svg");
 
 			svg.setAttributeNS(null, "viewBox", "" + xmin + " " + ymin + " " + (xmax - xmin) + " " + (ymax - ymin) + "");
 
@@ -623,6 +698,9 @@ var shingle = shingle || (function () {
 			translationEl = document.createElementNS(xmlns, "g");
 			scalingEl.appendChild(translationEl);
 
+			if(options.translateOffsetX) currentTranslateX += options.translateOffsetX / sfactor / 2;
+			if(options.translateOffsetY) currentTranslateY += options.translateOffsetY / sfactor / 2;
+
 			translationEl.setAttributeNS(null, 'transform', "translate(" + currentTranslateX + " " + currentTranslateY + ")");
 			translationEl.setAttributeNS(null, "class", options.translationElClass);
 
@@ -633,6 +711,8 @@ var shingle = shingle || (function () {
 
 			boundingrect.setAttributeNS(null, "width", "" + (xmax - xmin));
 			boundingrect.setAttributeNS(null, "height", "" + (ymax - ymin));
+			boundingrect.setAttributeNS(null, "class", options.boundingRectElClass);
+
 			boundingrect.style.fill = "none";
 			/*
 			rect.style.stroke = "black";
@@ -642,22 +722,28 @@ var shingle = shingle || (function () {
 			*/
 			translationEl.appendChild(boundingrect);
 
+			// all lines
 			linescontainer = document.createElementNS(xmlns, "g");
 			translationEl.appendChild(linescontainer);
 
+			// lines of the highlighted node to the related nodes
 			highlightedlinescontainer = document.createElementNS(xmlns, "g");
 			translationEl.appendChild(highlightedlinescontainer);
 
+			// all nodes
 			nodescontainer = document.createElementNS(xmlns, "g");
 			translationEl.appendChild(nodescontainer);
 
+			// highlighted nodes and related nodes
 			highlightednodescontainer = document.createElementNS(xmlns, "g");
 			translationEl.appendChild(highlightednodescontainer);
 
+			// names of the highlighted nodes
 			highlightednamescontainer = document.createElementNS(xmlns, "g");
 			translationEl.appendChild(highlightednamescontainer);
 
 			mfrmap.className = options.mapClass;
+
 			mfrmap.appendChild(svg);
 		}
 
@@ -672,18 +758,49 @@ var shingle = shingle || (function () {
 		}
 
 		function calcCurrentFontScale() {
-			var rect = mfrmap.getBoundingClientRect(),
-				startscale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0)),
-				size = (mapinfo["averageQuadWidth"] * (rect.bottom - rect.top) / 10000.0) * startscale / currentScale;
+
+			//
+			// calculate fontsize of text element to display as specified fontSize in px on screen
+			if(!fontScale) {
+
+				var	ymin = mapinfo["quadtree"]["ymin"],
+					ymax = mapinfo["quadtree"]["ymax"],
+					rect = mfrmap.getBoundingClientRect(),
+					graphHeight = ymax - ymin,
+					svgHeight = rect.bottom - rect.top,
+					svgHeightFactor = svgHeight / graphHeight;
+
+				fontScale = (options.fontSize / ( startScale * svgHeightFactor ));
+			}
+			if(options.textGrow) {
+				if(options.textShrink) {
+					// grow and shrink
+					size = fontScale;
+				} else {
+					// keep thesame size but do not shrink
+					size = fontScale  * ( Math.max(startScale, currentScale) / currentScale );
+				}
+			} else {
+				// keep thesame size
+				size = fontScale  * ( startScale / currentScale );
+			}
 
 			return size;
 		}
 
-		function showNodeName(quadid, node, elemid) {
+		function showNodeName(quadid, node, elemid, onHoverOnly, hoverEl) {
 
 			var textfield = document.getElementById(elemid);
+
+			// ensure unique elemid quick 'fix'
+			elemid += node.nodeid;
+
 			if (textfield == null) {
-				var size = calcCurrentFontScale();
+				// text size
+				var size = calcCurrentFontScale(),
+					relatedFactor = options.relatedNodesFontSize / options.fontSize;
+
+				if(typeof onHoverOnly != "undefined") size *= relatedFactor;
 
 				if (highlightednamescontainer == null) {
 					return;
@@ -696,6 +813,18 @@ var shingle = shingle || (function () {
 				textfield.setAttributeNS(null, "font-family", options.fontFamily);
 				textfield.setAttributeNS(null, "font-size", size);
 				textfield.setAttributeNS(null, "data-nodeid", "");
+
+				// only on hover
+				if(onHoverOnly && hoverEl) {
+					textfield.style.display = 'none';
+					hoverEl.addEventListener('mouseenter', function() {
+						textfield.style.display = '';
+					});
+					hoverEl.addEventListener('mouseleave', function() {
+						textfield.style.display = 'none';
+					});
+				}
+
 				highlightednamescontainer.appendChild(textfield);
 			}
 
@@ -723,9 +852,26 @@ var shingle = shingle || (function () {
 
 		function ScheduledAppendQuad(quadid) {
 			this.quadid = quadid;
+			drawQ[quadid] = true;
 
 			this.call = function () {
 				appendSvgDOM(quadid);
+
+				setTimeout(function() {
+					delete drawQ[quadid];
+					if(Object.keys(drawQ).length == 0) {
+						if(options.onQuadsDrawn) {
+							options.onQuadsDrawn();
+						}
+						if(!firstQuadDrawn) {
+							if(options.onFirstQuadDrawn) {
+								options.onFirstQuadDrawn();
+							}
+							firstQuadDrawn = true;
+						}
+					}
+				}, 400);
+
 				return true;
 			}
 			return this;
@@ -762,11 +908,13 @@ var shingle = shingle || (function () {
 			var minsize = mapinfo["minsize"];
 			var maxsize = mapinfo["maxsize"];
 			var range = 0.5;
+
 			if (Math.abs(maxsize - minsize) > 0.00001)
 			{
 				range = (node.size - minsize) / (maxsize - minsize);
 			}
 			range = Math.pow(range, 1.25);
+
 			return range;
 		}
 
@@ -886,43 +1034,44 @@ var shingle = shingle || (function () {
 			circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
 			circle.setAttributeNS(null, "fill", "" + color);
 
-			circle.addEventListener('mouseenter', function (e) {
-				e.cancelBubble = true;
-				hoverIn(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
-			});
+			if(options.selectNodes) {
+				circle.addEventListener('mouseenter', function (e) {
+					e.cancelBubble = true;
+					hoverIn(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+				});
 
-			circle.addEventListener('mouseleave', function (e) {
-				hoverOut();
-			});
+				circle.addEventListener('mouseleave', function (e) {
+					hoverOut();
+				});
 
-			circle.addEventListener('mousedown', function (e) {
-				e.cancelBubble = true;
-				showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
-			});
+				circle.addEventListener('mousedown', function (e) {
+					e.cancelBubble = true;
+					showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+				});
 
-			circle.addEventListener('mouseup', function (e) {
-				//        e.cancelBubble=true;
-			});
+				circle.addEventListener('mouseup', function (e) {
+					//        e.cancelBubble=true;
+				});
 
-			circle.addEventListener('touchstart', function (evt) {
-				var e = evt.changedTouches[0];
-				showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
-				evt.preventDefault();
-				evt.cancelBubble = true;
-			});
+				circle.addEventListener('touchstart', function (evt) {
+					var e = evt.changedTouches[0];
+					showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				});
 
-			circle.addEventListener('touchmove', function (evt) {
-				var e = evt.changedTouches[0];
-				evt.preventDefault();
-				evt.cancelBubble = true;
-			});
+				circle.addEventListener('touchmove', function (evt) {
+					var e = evt.changedTouches[0];
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				});
 
-			circle.addEventListener('touchend', function (evt) {
-				var e = evt.changedTouches[0];
-				evt.preventDefault();
-				evt.cancelBubble = true;
-			});
-
+				circle.addEventListener('touchend', function (evt) {
+					var e = evt.changedTouches[0];
+					evt.preventDefault();
+					evt.cancelBubble = true;
+				});
+			}
 			return circle;
 		}
 
@@ -999,7 +1148,7 @@ var shingle = shingle || (function () {
 
 			// scale texts (currently only one)
 			var size = calcCurrentFontScale(),
-				nodeTextEls = document.getElementsByClassName(options.nodeTextClass);
+				nodeTextEls = svg.getElementsByClassName(options.nodeTextClass);
 
 			len = nodeTextEls.length;
 			for (i = 0; i < len; i++) {
@@ -1030,6 +1179,34 @@ var shingle = shingle || (function () {
 			setSvgScales();
 			findQuadsToDraw();
 			findQuadsToRemove();
+		}
+
+		function zoomTo(level) {
+			zoomLevel = level;
+			currentScale = 1 / (minScale + (maxScale - minScale) * (zoomLevel / 100.0));
+			setSvgScales();
+			findQuadsToDraw();
+			findQuadsToRemove();
+		}
+
+		function doZoom(step) {
+			// notice the zoom function works in reverse in shingle ..
+			if(zoomLevel === false) zoomLevel = options.initialZoom;
+			if((step > 0 && zoomLevel < 100) || (step < 0 && zoomLevel > 0)) {
+				zoomTo(zoomLevel + step);
+			}
+		}
+
+		function zoomIn() {
+			doZoom(-1 * options.zoomStep);
+		}
+
+		function zoomOut() {
+			doZoom(options.zoomStep);
+		}
+
+		function zoomReset() {
+			zoomTo(options.initialZoom);
 		}
 
 		function HighlightedNode() {
@@ -1131,7 +1308,6 @@ var shingle = shingle || (function () {
 		function changehighlightTo(quadid, nodeid) {
 
 			showInfoAbout(quadid, nodeid);
-
 			var graph = graphs[quadid];
 
 			if (graph) {
@@ -1155,39 +1331,155 @@ var shingle = shingle || (function () {
 
 		function async_showmfrinfo(quadid, nodeid) {
 
+			var self = this;
+
 			this.quadid = quadid;
 			this.nodeid = nodeid;
 			this.j = 0;
 
-			this.call = function () {
+			this.findNodeFrom = function() {
+				var result = {
+					graph: null,
+					node: null
+				};
 
 				if (highlightedlinescontainer == null) {
-					return true;
+					return result;
 				}
+
 				if (highlightednodescontainer == null) {
-					return true;
+					return result;
 				}
 
 				var graph = graphs[this.quadid];
 
 				if (graph == null) {
-					return true;
+					return result;
 				}
 
 				var node1 = null;
 				var nodeIndex;
 
 				nodeIndex = graph["idmap"][this.nodeid];
+
 				node1 = graph["nodes"][nodeIndex];
 
+				result.graph = graph;
+				result.node = node1;
+
+				// draw the selected node ?
 				if (highlightednodescontainer != null && node1 != null) {
-					var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered);
+					var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered, true);
 					highlightednodescontainer.appendChild(circle);
-					clearNodeNames();
-					showNodeName(this.quadid, node1, "centerednodetext");
+
+					// clear and show main node name, only at first cycle !
+					if(this.j < 100) {
+
+						var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered, true);
+						highlightednodescontainer.appendChild(circle);
+						clearNodeNames();
+						showNodeName(this.quadid, node1, "centerednodetext");
+					}
 				}
 
+				return result;
+			};
+
+			this.createEdge = function(quadid, node1, node2) {
+
+				var x1 = node1.x, y1 = node1.y,
+					x2 = node2.x, y2 = node2.y,
+					edgeOpacity = 0.5,
+					line = makeLineElement(x1, y1, x2, y2);
+
+				line.style.stroke = "" + edgeHighlightColor(node1, node2);
+				line.setAttributeNS(null, "stroke-opacity", "1");
+
+				line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
+				line.setAttributeNS(null, "stroke-width", "2px");
+				line.setAttributeNS(null, "stroke-linecap", "round");
+				highlightedlinescontainer.appendChild(line);
+
+				if (highlightednodescontainer != null && node2 != null) {
+
+					// related nodes
+					var circle = MakeNodeElement(quadid, node2, nodemodeHighlighted);
+					highlightednodescontainer.appendChild(circle);
+
+					//
+					// show the related node names ?
+					// use unique name
+					if(options.showRelatedNodeNames !== false) {
+						showNodeName(quadid, node2, "centerednodetext", (options.showRelatedNodeNames == 'hover'), circle);
+					}
+				}
+			};
+
+			this.findRelationsUsingMap = function () {
+
+				var result = this.findNodeFrom();
+
+				if(!result.graph || !result.node || !result.node.nodeid) {
+					return true;
+				}
+
+				var url = options.graphPath + 'findRelations' +
+						'?quadid=' + quadid +
+						'&nodeid=' + result.node.nodeid;
+
+				ajaxGet(url, function(response) {
+					if(response) {
+
+						var relations = JSON.parse(response);
+
+						if(relations && relations.toNodes && relations.toNodes.length) {
+
+							var node1 = result.node;
+
+							for (var i = 0; i < relations.toNodes.length; i++) {
+
+								var toNode = relations.toNodes[i];
+
+								var node2 = null,
+									graphB = graphs[toNode.quad];
+
+								if (graphB) {
+									var nodeIndex = graphB["idmap"][toNode.node],
+										node2 = graphB["nodes"][nodeIndex];
+
+									options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+								}
+
+
+								if (node1 != null && node2 != null) {
+
+									// visualize edge between 2 highlighted nodes
+									self.createEdge(toNode.quad, node1, node2);
+								}
+							};
+						}
+					}
+				});
+
+				// end cycles
+				return true;
+			};
+
+			this.findRelations = function () {
+
+				var result = this.findNodeFrom();
+
+				if(!result.graph) {
+					return true;
+				}
+
+				var	graph = result.graph,
+					node1 = result.node;
+
+				// highlight the related nodes / lines
+				// max 100 at one scheduler cycle
 				for (var i = 0; i < 100; i++) {
+
 					var node2 = null;
 					if (this.j >= graph["relations"].length) {
 						return true;
@@ -1199,7 +1491,7 @@ var shingle = shingle || (function () {
 						quadid2 = graph["relations"][this.j].quadB;
 						var graphB = graphs[quadid2];
 						if (graphB) {
-							nodeIndex = graphB["idmap"][graph["relations"][this.j].nodeidB];
+							var nodeIndex = graphB["idmap"][graph["relations"][this.j].nodeidB];
 							node2 = graphB["nodes"][nodeIndex];
 							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
 						}
@@ -1207,7 +1499,7 @@ var shingle = shingle || (function () {
 						quadid2 = graph["relations"][this.j].quadA;
 						var graphA = graphs[quadid2];
 						if (graphA) {
-							nodeIndex = graphA["idmap"][graph["relations"][this.j].nodeidA];
+							var nodeIndex = graphA["idmap"][graph["relations"][this.j].nodeidA];
 							node2 = graphA["nodes"][nodeIndex];
 							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
 						}
@@ -1215,27 +1507,16 @@ var shingle = shingle || (function () {
 
 					if (node1 != null && node2 != null) {
 
-						var x1 = node1.x, y1 = node1.y,
-							x2 = node2.x, y2 = node2.y,
-							edgeOpacity = 0.5,
-							line = makeLineElement(x1, y1, x2, y2);
-
-						line.style.stroke = "" + edgeHighlightColor(node1, node2);
-						line.setAttributeNS(null, "stroke-opacity", "1");
-
-						line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
-						line.setAttributeNS(null, "stroke-width", "2px");
-						line.setAttributeNS(null, "stroke-linecap", "round");
-						highlightedlinescontainer.appendChild(line);
-
-						if (highlightednodescontainer != null && node2 != null) {
-							var circle = MakeNodeElement(quadid2, node2, nodemodeHighlighted);
-							highlightednodescontainer.appendChild(circle);
-						}
+						// visualize edge between 2 highlighted nodes
+						this.createEdge(quadid2, node1, node2);
 					}
 					this.j = this.j + 1;
 				}
 			};
+
+			// use a different algortihm supported by the node backend if supported
+			this.call = mapinfo.loadFromBackend && mapinfo.backendMapsNodeRelations ? this.findRelationsUsingMap : this.findRelations;
+
 			return this;
 		}
 
@@ -1251,6 +1532,7 @@ var shingle = shingle || (function () {
 		}
 
 		function showmfrinfo(quadid, nodeid) {
+
 			if (last_async_showmfrinfo != null) {
 				last_async_showmfrinfo.j = 1000000;
 			}
@@ -1326,6 +1608,9 @@ var shingle = shingle || (function () {
 			shinglecontainer.appendChild(mfrmap);
 
 			zoom = document.createElement("input");
+
+			if(!options.zoomSlider) zoom.style.display= "none";
+
 			zoom.setAttribute("type", "range");
 			zoom.setAttribute("name", "zoom");
 			zoom.setAttribute("value", "" + options.initialZoom);
@@ -1373,11 +1658,9 @@ var shingle = shingle || (function () {
 				}
 			}
 
-			if (nodeid) {
-				findPosition(nodeid);
-			} else {
-				loadMapInfo();
-			}
+			if(!nodeid && options.nodeId) nodeid = options.nodeId;
+
+			loadMapInfo(nodeid);
 
 			document.addEventListener('keyup', function KeyCheck(e) {
 				var KeyID = (window.event) ? event.keyCode : e.keyCode;
@@ -1396,7 +1679,10 @@ var shingle = shingle || (function () {
 
 		return {
 			hoverIn: hoverIn,
-			changehighlightTo: changehighlightTo
+			changehighlightTo: changehighlightTo,
+			zoomIn: zoomIn,
+			zoomOut: zoomOut,
+			zoomReset: zoomReset
 		};
 
 	}, newGraph = function (settings) {

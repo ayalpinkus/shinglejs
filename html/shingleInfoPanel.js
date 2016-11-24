@@ -65,7 +65,12 @@ function shingleInfoPanel(settings) {
 
 			var moreOnNode = ''; //GetMoreOnNode(nodeid);
 
-			mainNode.innerHTML = "<span class=\"shingle-info-node\" id=\"node-" + nodeid + "\" data-nodeid=\"" + nodeid + "\" data-quadid-=\"" + quadid + "\" >" + name + "</span> " + nodeid + "<br>" + moreOnNode + "<hr>";
+			if(data.href) {
+				mainNode.innerHTML = "<a href=\"" + data.href + "\" target=\"tabNode" + nodeid + "\" class=\"shingle-info-node\" id=\"node-" + nodeid + "\" data-nodeid=\"" + nodeid + "\" data-quadid-=\"" + quadid + "\" >" + name + "</a> " + nodeid + "<br>" + moreOnNode + "<hr>";
+			} else {
+				mainNode.innerHTML = "<span class=\"shingle-info-node\" id=\"node-" + nodeid + "\" data-nodeid=\"" + nodeid + "\" data-quadid-=\"" + quadid + "\" >" + name + "</span> " + nodeid + "<br>" + moreOnNode + "<hr>";
+			}
+
 			var mainNodeEl = mainNode.getElementsByClassName('shingle-info-node');
 			self.nodeInfoEls[nodeid] = mainNodeEl[0];
 
