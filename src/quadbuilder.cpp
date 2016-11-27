@@ -360,6 +360,8 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
     fprintf(mapinfo_json_file,"  \"minsize\" : %f,\n", quadTree.minsize);
     fprintf(mapinfo_json_file,"  \"maxsize\" : %f,\n", quadTree.maxsize);
 
+    fprintf(mapinfo_json_file,"  \"data-format-version\" : %d,\n", 0);
+
     fprintf(mapinfo_json_file,"  \"maxNodesPerQuad\" : %d,\n",quadTree.maxNodesPerQuadUsed);
     fprintf(mapinfo_json_file,"  \"totalMapWidth\" : %f,\n",quadTree.totalMapWidth);
     fprintf(mapinfo_json_file,"  \"totalMapHeight\" : %f,\n",quadTree.totalMapHeight);

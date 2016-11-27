@@ -477,6 +477,24 @@ var shingle = shingle || (function () {
 			ajaxGet(options.graphPath + "mapinfo.json", function(response) {
 
 				mapinfo = JSON.parse(response);
+				
+				if (mapinfo["data-format-version"] == null) {
+					mapinfo["data-format-version"] = 0;
+				}
+				
+				/*
+				 * mapinfo["logarithm-offset"] : logarithm of zero or less than zero is undesired,
+				 * so if mapinfo["minsize"] is close to zero or negative, we add this offset.
+				 */
+				if (mapinfo["minsize"] < 0) {
+					mapinfo["logarithm-offset"] = 0.1 - mapinfo["minsize"];
+				} else if (mapinfo["minsize"] < 0) {
+					mapinfo["logarithm-offset"] = 0.1;
+				}
+				else {
+					mapinfo["logarithm-offset"] = 0;
+				}
+
 				if(nodeid) {
 					findPosition(nodeid)
 				} else {
@@ -905,16 +923,23 @@ var shingle = shingle || (function () {
 		}
 
 		function nodeRange(node) {
-			var minsize = mapinfo["minsize"];
-			var maxsize = mapinfo["maxsize"];
-			var range = 0.5;
 
+			var offset = mapinfo["logarithm-offset"];
+
+			var minsize = offset+mapinfo["minsize"];
+			var maxsize = offset+mapinfo["maxsize"];
+			var nodesize = node.size;
+
+			var range = Math.log(nodesize/minsize)/Math.log(maxsize/minsize);
+			
+/*Previous, linear version
+			var range = 0.5;
 			if (Math.abs(maxsize - minsize) > 0.00001)
 			{
-				range = (node.size - minsize) / (maxsize - minsize);
+				range = (nodesize - minsize) / (maxsize - minsize);
 			}
 			range = Math.pow(range, 1.25);
-
+*/
 			return range;
 		}
 
