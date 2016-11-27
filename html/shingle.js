@@ -483,19 +483,6 @@ var shingle = shingle || (function () {
 				if (mapinfo["data-format-version"] == null) {
 					mapinfo["data-format-version"] = 0;
 				}
-				
-				/*
-				 * mapinfo["logarithm-offset"] : logarithm of zero or less than zero is undesired,
-				 * so if mapinfo["minsize"] is close to zero or negative, we add this offset.
-				 */
-				if (mapinfo["minsize"] < 0) {
-					mapinfo["logarithm-offset"] = 0.1 - mapinfo["minsize"];
-				} else if (mapinfo["minsize"] < 0.1) {
-					mapinfo["logarithm-offset"] = 0.1;
-				}
-				else {
-					mapinfo["logarithm-offset"] = 0;
-				}
 
 				if(nodeid) {
 					findPosition(nodeid)
@@ -926,21 +913,12 @@ var shingle = shingle || (function () {
 
 		function nodeRange(node) {
 
-			var offset = mapinfo["logarithm-offset"];
-
-			var minsize = offset+mapinfo["minsize"];
-			var maxsize = offset+mapinfo["maxsize"];
+			var minsize = mapinfo["minsize"];
+			var maxsize = mapinfo["maxsize"];
 			var nodesize = node.size;
 
-/* logarithmic scale version
-			var range = Math.log(nodesize/minsize)/Math.log(maxsize/minsize);
-*
-			
-/*Power range version
-*/
 			var range = 0.5;
-			if (Math.abs(maxsize - minsize) > 0.00001)
-			{
+			if (Math.abs(maxsize - minsize) > 0.00001) {
 				range = (nodesize - minsize) / (maxsize - minsize);
 			}
 			range = Math.pow(range, options.nodeRadiusScalePower);
@@ -1139,9 +1117,9 @@ var shingle = shingle || (function () {
 				rect.setAttributeNS(null, "height", "" + (graph["header"]["ymax"] - graph["header"]["ymin"]));
 				rect.style.fill = "none";
 				rect.style.stroke = "black";
-				rect.style.strokeWidth = edgeWidthScale;
+				rect.style.strokeWidth = 2*edgeWidthScale;
 				rect.style.fillOpacity = "0";
-				rect.style.strokeOpacity = "0.75";
+				rect.style.strokeOpacity = "1";
 				glin.appendChild(rect);
 			}
 
