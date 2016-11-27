@@ -488,7 +488,7 @@ var shingle = shingle || (function () {
 				 */
 				if (mapinfo["minsize"] < 0) {
 					mapinfo["logarithm-offset"] = 0.1 - mapinfo["minsize"];
-				} else if (mapinfo["minsize"] < 0) {
+				} else if (mapinfo["minsize"] < 0.1) {
 					mapinfo["logarithm-offset"] = 0.1;
 				}
 				else {
