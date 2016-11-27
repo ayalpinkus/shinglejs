@@ -930,16 +930,19 @@ var shingle = shingle || (function () {
 			var maxsize = offset+mapinfo["maxsize"];
 			var nodesize = node.size;
 
+/* logarithmic scale version
 			var range = Math.log(nodesize/minsize)/Math.log(maxsize/minsize);
+*
 			
-/*Previous, linear version
+/*Power range version
+*/
 			var range = 0.5;
 			if (Math.abs(maxsize - minsize) > 0.00001)
 			{
 				range = (nodesize - minsize) / (maxsize - minsize);
 			}
-			range = Math.pow(range, 1.25);
-*/
+			range = Math.pow(range, 0.75);
+
 			return range;
 		}
 
