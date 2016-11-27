@@ -833,6 +833,16 @@ var shingle = shingle || (function () {
 			return size;
 		}
 
+
+
+
+
+
+
+
+
+
+
 		function showNodeName(quadid, node, elemid, onHoverOnly, hoverEl) {
 
 			var textfield = document.getElementById(elemid);
@@ -876,6 +886,7 @@ var shingle = shingle || (function () {
 			if (textfield.getAttribute('data-nodeid') == node.nodeid) {
 				return;
 			}
+
 
 			var x = node.x,
 				y = node.y,
@@ -975,7 +986,7 @@ var shingle = shingle || (function () {
 				}
 				var nredges = graph["relations"].length;
 
-				if (nredges > 100) nredges = 100;
+				if (quadLevels && (nredges > 100)) nredges = 100;
 
 				var glin = document.getElementById(this.quadid);
 				if (glin == null) {
