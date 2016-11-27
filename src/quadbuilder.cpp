@@ -13,8 +13,12 @@
 #include "quadtree.h"
 #include "hashtable.h"
 
-#define NEW_EDGE_TRAVERSE
 
+#define SEPARATE_CLICKABLE_EDGES
+
+#ifdef SEPARATE_CLICKABLE_EDGES
+#define EDGECOUNT_LIMIT 100
+#endif // SEPARATE_CLICKABLE_EDGES
 
 static int quadLevels=1;
 
@@ -108,7 +112,9 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
   std::set<std::string> quadsreferenced;
   first = 1;
 
-#ifdef NEW_EDGE_TRAVERSE
+
+  int ecount = 0;
+
   LinkedEdges* edgelist = root->edges;
   while (edgelist)
   {
@@ -142,50 +148,15 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
       }
     }
     edgelist = edgelist->next;
-  }
-#else  // NEW_EDGE_TRAVERSE
-  for (i=0;i<nredges;i++)
-  {
-    MFRNode *nodeA = NULL;
-    MFRNode *nodeB = NULL;
 
-    nodeA = nodes.LookUp(edges.edges[i].nodeidA);
-    nodeB = nodes.LookUp(edges.edges[i].nodeidB);
-
-    if (nodeA && nodeB)
+#ifdef EDGECOUNT_LIMIT
+    ecount++;
+    if (ecount>EDGECOUNT_LIMIT)
     {
-      if (nodeB->quadNode == root && nodeA->quadNode != root)
-      {
-        if (quadsreferenced.find(nodeA->quadNode->quadid) == quadsreferenced.end())
-	{
-	  quadsreferenced.insert(nodeA->quadNode->quadid);
-          if (!first)
-          {
-            fprintf(json_out_file,"    ,");
-          }
-	  first = 0;
-          fprintf(json_out_file," \"%s\"\n", nodeA->quadNode->quadid);
-	}
-      }
-      if (nodeA->quadNode == root && nodeB->quadNode != root)
-      {
-        if (quadsreferenced.find(nodeB->quadNode->quadid) == quadsreferenced.end())
-	{
-	  quadsreferenced.insert(nodeB->quadNode->quadid);
-          if (!first)
-          {
-            fprintf(json_out_file,"    ,");
-          }
-	  first = 0;
-          fprintf(json_out_file," \"%s\"\n", nodeB->quadNode->quadid);
-	}
-      }
+      break;
     }
+#endif // EDGECOUNT_LIMIT
   }
-
-#endif // NEW_EDGE_TRAVERSE
-
-
 
   fprintf(json_out_file,"  ],\n");
 
@@ -231,8 +202,8 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
   first = 1;
   
 
-#ifdef NEW_EDGE_TRAVERSE
   edgelist = root->edges;
+  ecount=0;
   while (edgelist)
   {
     MFRNode *nodeA = edgelist->edge->nodeA;
@@ -252,80 +223,16 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
     fprintf(json_out_file,"    }\n");
 
     edgelist = edgelist->next;
+
+
+#ifdef EDGECOUNT_LIMIT
+    ecount++;
+    if (ecount>EDGECOUNT_LIMIT)
+    {
+      break;
+    }
+#endif // EDGECOUNT_LIMIT
   }
-#else  // NEW_EDGE_TRAVERSE
-
-  for (i=0;i<nredges;i++)
-  {
-    int j;
-
-    MFRNode *nodeA = NULL;
-    MFRNode *nodeB = NULL;
-
-    nodeA = nodes.LookUp(edges.edges[i].nodeidA);
-    nodeB = nodes.LookUp(edges.edges[i].nodeidB);
-
-    
-    if (!nodeA)
-    {
-      fprintf(stderr,"bsearch didn't find %s", edges.edges[i].nodeidA);
-      for (j=0;j<nodes.nrnodes;j++)
-      {
-        if (!strcmp(nodes.nodes[j].nodeid, edges.edges[i].nodeidA))
-        {
-          fprintf(stderr,"but it does exist!");
-	  break;
-        }
-      }
-      fprintf(stderr,"\n");
-    }
-    if (!nodeB)
-    {
-      fprintf(stderr,"bsearch didn't find %s", edges.edges[i].nodeidB);
-      for (j=0;j<nodes.nrnodes;j++)
-      {
-        if (!strcmp(nodes.nodes[j].nodeid, edges.edges[i].nodeidB))
-        {
-          fprintf(stderr,"but it does exist!");
-	  break;
-        }
-      }
-      fprintf(stderr,"\n");
-    }
-    
-    
-    if (nodeA && nodeB)
-    {
-      if (strcmp(nodeA->nodeid,edges.edges[i].nodeidA))
-      {
-        printf("WARNING: A ids not the same: %s != %s\n",nodeA->nodeid,edges.edges[i].nodeidA);
-      }
-
-      if (strcmp(nodeB->nodeid,edges.edges[i].nodeidB))
-      {
-        printf("WARNING: B ids not the same: %s != %s\n",nodeB->nodeid,edges.edges[i].nodeidB);
-      }
-
-
-      if (nodeA->quadNode == root || nodeB->quadNode == root)
-      {
-        if (!first)
-        {
-          fprintf(json_out_file,"    ,");
-        }
-	first = 0;
-        fprintf(json_out_file,"    {\n");
-
-        fprintf(json_out_file,"      \"quadA\": \"%s\",\n", nodeA->quadNode->quadid);
-        fprintf(json_out_file,"      \"nodeidA\": \"%s\",\n", edges.edges[i].nodeidA);
-        fprintf(json_out_file,"      \"quadB\": \"%s\",\n", nodeB->quadNode->quadid);
-        fprintf(json_out_file,"      \"nodeidB\": \"%s\"\n", edges.edges[i].nodeidB);
-        fprintf(json_out_file,"    }\n");
-      }
-    }
-  }
-
-#endif // NEW_EDGE_TRAVERSE
 
 
   fprintf(json_out_file,"    ]\n");

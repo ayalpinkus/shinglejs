@@ -39,7 +39,7 @@ var shingle = shingle || (function () {
 				edgeColor: [213, 213, 213],
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
-				nodeRadiusScaleFactor: 1/300.0 ,
+				nodeRadiusScaleFactor: 1/100.0 ,
 				nodeRadiusScalePower: 0.75 ,
 				fontFamily: "sans",
 				fontSize: 18,
@@ -835,6 +835,17 @@ var shingle = shingle || (function () {
 
 
 
+		function calcCurrentNodeScale() {
+
+/*
+			if (quadLevels) {
+				return ( startScale / currentScale );
+			}
+
+*/
+			return 1;
+		}
+
 
 
 
@@ -892,7 +903,7 @@ var shingle = shingle || (function () {
 				y = node.y,
 				nodename = node.name,
 				range = nodeRange(node),
-				nodeRadius = calcNodeRadius(range) * nodeRadiusScale;
+				nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale();
 
 			textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
 			textfield.setAttributeNS(null, "x", (x + 2 * nodeRadius));
@@ -1056,7 +1067,7 @@ var shingle = shingle || (function () {
 
 			var range = nodeRange(node);
 
-			var nodeRadius = calcNodeRadius(range) * nodeRadiusScale;
+			var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale();
 			var nEdgeWid = 0;
 			var opacity;
 
@@ -1096,6 +1107,7 @@ var shingle = shingle || (function () {
 					e.cancelBubble = true;
 					hoverIn(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
 				});
+
 
 				circle.addEventListener('mouseleave', function (e) {
 					hoverOut();
@@ -1217,6 +1229,26 @@ var shingle = shingle || (function () {
 				var element = nodeTextEls[i];
 				element.setAttributeNS(null, "font-size", size);
 			}
+			
+			
+
+
+			if (quadLevels) {
+				var nsize = calcCurrentNodeScale(),
+					nodeEls = 	svg.getElementsByClassName(options.nodeClass);
+
+				len = nodeEls.length;
+				for (i = 0; i < len; i++) {
+					var element = nodeEls[i];
+					var node = getNodesData(element.getAttribute('data-quadid'), element.getAttribute('data-nodeid'));
+
+					var range = nodeRange(node);
+					var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * nsize;
+					element.setAttributeNS(null, "r", nodeRadius);
+				}
+			}
+
+			
 		}
 
 		function setSvgTranslations() {
