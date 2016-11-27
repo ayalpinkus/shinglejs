@@ -1164,9 +1164,14 @@ var shingle = shingle || (function () {
 
 				rect.setAttributeNS(null, "width", "" + (graph["header"]["xmax"] - graph["header"]["xmin"]));
 				rect.setAttributeNS(null, "height", "" + (graph["header"]["ymax"] - graph["header"]["ymin"]));
+
+
+				rect.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
+				rect.setAttributeNS(null, "stroke-width", "1px");
+
 				rect.style.fill = "none";
 				rect.style.stroke = "black";
-				rect.style.strokeWidth = 2*edgeWidthScale;
+//rect.style.strokeWidth = 2*edgeWidthScale;
 				rect.style.fillOpacity = "0";
 				rect.style.strokeOpacity = "1";
 				glin.appendChild(rect);
