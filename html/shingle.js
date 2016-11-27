@@ -837,12 +837,25 @@ var shingle = shingle || (function () {
 
 		function calcCurrentNodeScale() {
 
-/*
 			if (quadLevels) {
+
+/*
+				var	ymin = mapinfo["quadtree"]["ymin"],
+					ymax = mapinfo["quadtree"]["ymax"],
+					rect = mfrmap.getBoundingClientRect(),
+					graphHeight = ymax - ymin,
+					svgHeight = rect.bottom - rect.top,
+					svgHeightFactor = svgHeight / graphHeight;
+
+				return (1.0 / ( startScale * svgHeightFactor ));
+*/
+
+
+
 				return ( startScale / currentScale );
+
 			}
 
-*/
 			return 1;
 		}
 
