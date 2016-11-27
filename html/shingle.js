@@ -65,6 +65,8 @@ var shingle = shingle || (function () {
 			maxScale = 0.5,
 			edgeWidthScale = 1 / 60.0,
 			quadsDrawn = {},
+			quadLevels = false,
+			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
 			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
 			linescontainer, nodescontainer,
@@ -301,6 +303,21 @@ var shingle = shingle || (function () {
 			}
 			return false;
 		}
+		
+		function quadIntersectsAndQuadBigEnough(screenrect, root) {
+			// Not on screen? Don't draw.
+			if (!quadIntersects(screenrect, root)) {
+				return false;
+			}
+			
+			// Too small? don't draw.
+			if ((root["xmax"]-root["xmin"]) < 0.2*(screenrect[2]-screenrect[0])) {
+				return false;
+			}
+
+			// Else, draw.
+			return true;
+		}
 
 		function findQuadsNodeJs(screenrect) {
 
@@ -338,15 +355,27 @@ var shingle = shingle || (function () {
 		}
 
 		function findQuadsToDrawRecursive(screenrect, root, quadid) {
-			if (quadIntersects(screenrect, root)) {
-				if (root["type"] == "Leaf") {
-					if (drawnQuad(quadid)) {
-						return;
+
+			if (quadLevels) {
+				if (shouldQuadBeVisible(screenrect, root)) {
+					if (!drawnQuad(quadid)) {
+						loadQuad(quadid);
 					}
-					loadQuad(quadid);
-				} else {
 					findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
 					findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+				}
+			}
+			else {
+				if (shouldQuadBeVisible(screenrect, root)) {
+					if (root["type"] == "Leaf") {
+						if (drawnQuad(quadid)) {
+							return;
+						}
+						loadQuad(quadid);
+					} else {
+						findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
+						findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+					}
 				}
 			}
 		}
@@ -362,7 +391,7 @@ var shingle = shingle || (function () {
 					header = graphs[elid].header;
 
 				if (header != null) {
-					if (!quadIntersects(screenrect, header)) {
+					if (!shouldQuadBeVisible(screenrect, header)) {
 						el.parentNode.removeChild(el);
 						if(quadsDrawn[elid]) delete quadsDrawn[elid];
 						i--;
@@ -376,7 +405,7 @@ var shingle = shingle || (function () {
 					if (graph != null) {
 						var header = graph.header;
 						if (header != null) {
-							if (!quadIntersects(screenrect, header)) {
+							if (!shouldQuadBeVisible(screenrect, header)) {
 								scheduler.tasks.splice(i, 1);
 								i--;
 							}
@@ -396,7 +425,7 @@ var shingle = shingle || (function () {
 
 					var header = graph.header;
 
-					if (quadIntersects(screenrect, header)) {
+					if (shouldQuadBeVisible(screenrect, header)) {
 						visible = true;
 					} else {
 
@@ -411,7 +440,7 @@ var shingle = shingle || (function () {
 
 							header = othergraph.header;
 
-							if (quadIntersects(screenrect, header)) {
+							if (shouldQuadBeVisible(screenrect, header)) {
 								visible = true;
 								break;
 							}
@@ -457,6 +486,11 @@ var shingle = shingle || (function () {
 
 			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
 			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
+
+			if (quadLevels) {
+				maxScale = 1;
+			}
+
 			nodeRadiusScale = mapinfo["averageQuadWidth"] *options.nodeRadiusScaleFactor;
 
 			if (nodeRadiusScale > 1)
@@ -483,7 +517,11 @@ var shingle = shingle || (function () {
 				if (mapinfo["data-format-version"] == null) {
 					mapinfo["data-format-version"] = 0;
 				}
-
+				if (mapinfo["data-format-version"] > 0) {
+					quadLevels = true;
+					shouldQuadBeVisible = quadIntersectsAndQuadBigEnough;
+				}
+				
 				if(nodeid) {
 					findPosition(nodeid)
 				} else {
