@@ -994,7 +994,7 @@ var shingle = shingle || (function () {
 				}
 
 				var j;
-				for (j = 0; j < 100; j++) {
+				for (j = 0; j < nredges; j++) {
 					if (this.i >= nredges) {
 						return true;
 					}
