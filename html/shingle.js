@@ -455,7 +455,7 @@ var shingle = shingle || (function () {
 
 			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
 			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
-			nodeRadiusScale = mapinfo["averageQuadWidth"] / 200.0;
+			nodeRadiusScale = mapinfo["averageQuadWidth"] / 300.0;
 
 			if (nodeRadiusScale > 1)
 				nodeRadiusScale = 1;
