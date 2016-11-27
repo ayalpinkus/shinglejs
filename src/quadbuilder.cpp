@@ -13,6 +13,20 @@
 #include "quadtree.h"
 #include "hashtable.h"
 
+#define NEW_EDGE_TRAVERSE
+
+
+static int quadLevels=1;
+
+
+static int FormatVersionNumber()
+{
+  if (quadLevels)
+  {
+    return 1;
+  }
+  return 0;
+}
 
 
 static void write_root(FILE* mapinfo_json_file, QuadNode* root)
@@ -60,7 +74,6 @@ static void write_root(FILE* mapinfo_json_file, QuadNode* root)
 }
 
 
-#define NEW_EDGE_TRAVERSE
 
 int nrquadnodeswritten = 0;
 
@@ -335,6 +348,10 @@ static void WriteRootJSON(const char* fnamebuilder, MFRNodeArray &nodes, MFREdge
   {
     case QuadNode::SplitX:
     case QuadNode::SplitY:
+      if (quadLevels)
+      {
+        WriteLeafJSON(rootname, nodes, edges, quadTree, root);
+      }
       WriteRootJSON(leftname, nodes, edges, quadTree, root->left);
       WriteRootJSON(rightname, nodes, edges, quadTree, root->right);
       break;
@@ -359,9 +376,7 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
 
     fprintf(mapinfo_json_file,"  \"minsize\" : %f,\n", quadTree.minsize);
     fprintf(mapinfo_json_file,"  \"maxsize\" : %f,\n", quadTree.maxsize);
-
-    fprintf(mapinfo_json_file,"  \"data-format-version\" : %d,\n", 0);
-
+    fprintf(mapinfo_json_file,"  \"data-format-version\" : %d,\n", FormatVersionNumber() );
     fprintf(mapinfo_json_file,"  \"maxNodesPerQuad\" : %d,\n",quadTree.maxNodesPerQuadUsed);
     fprintf(mapinfo_json_file,"  \"totalMapWidth\" : %f,\n",quadTree.totalMapWidth);
     fprintf(mapinfo_json_file,"  \"totalMapHeight\" : %f,\n",quadTree.totalMapHeight);
@@ -428,7 +443,7 @@ int main(int argc, char** argv)
 
 //  nodes.debug_show_if_sorted(12);
   
-  MFRQuadTree quadTree(nodes);
+  MFRQuadTree quadTree(nodes, quadLevels);
   
 #define MAX_NODES_PER_QUAD 50  
   
@@ -440,6 +455,7 @@ int main(int argc, char** argv)
   WriteHashtable(map_out_path, nodes, edges, quadTree);
 
   fprintf(stderr,"Writing out quadtree\n");fflush(stderr);
+
   nrquadnodeswritten = 0;
 
   int nredges = edges.nredges;

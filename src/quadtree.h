@@ -45,7 +45,7 @@ class MFRNodeArray;
 class MFRQuadTree
 {
 public:
-  MFRQuadTree(MFRNodeArray &nds);
+  MFRQuadTree(MFRNodeArray &nds, int aQuadLevels);
   ~MFRQuadTree();
   void BuildTree(int maxNodesPerQuad);
   void BuildTree(QuadNode* r, int maxNodesPerQuad);
@@ -74,6 +74,7 @@ public:
 
   double minsize;
   double maxsize;
+  int quadLevels;
 };
 
 #endif // __QUADTREE_H__

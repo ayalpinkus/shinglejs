@@ -8,8 +8,6 @@
 #include "quadtree.h"
 
 
-#define noUSE_QSORT_R
-
 
 
 QuadNode::~QuadNode()
@@ -58,7 +56,7 @@ void MFRQuadTree::CalcRect(QuadNode* root)
 }
 
 
-MFRQuadTree::MFRQuadTree(MFRNodeArray &nds) : nodes(nds)
+MFRQuadTree::MFRQuadTree(MFRNodeArray &nds, int aQuadLevels) : nodes(nds), quadLevels(aQuadLevels)
 {
   index = (long*)malloc(nodes.nrnodes*sizeof(long));
   maxNodesPerQuadUsed = 1;
@@ -93,33 +91,14 @@ MFRQuadTree::~MFRQuadTree()
 
 
 
-#ifdef USE_QSORT_R
-#else // USE_QSORT_R
-#endif // USE_QSORT_R
 
-#ifdef USE_QSORT_R
-#else // USE_QSORT_R
-  MFRNodeArray *global_mfr_node_array = NULL;
-#endif // USE_QSORT_R
+MFRNodeArray *global_mfr_node_array = NULL;
 
-
-int xcompare(const void *a, const void *b
-#ifdef USE_QSORT_R
-, void *arg
-#else // USE_QSORT_R
-#endif // USE_QSORT_R
-)
-
+int xcompare(const void *a, const void *b)
 {
   long indexa = *(long*)a;
   long indexb = *(long*)b;
-#ifdef USE_QSORT_R
-  MFRNodeArray *nds = (MFRNodeArray *)arg;
-#else // USE_QSORT_R
   MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
-#endif // USE_QSORT_R
-
-//printf("ax=%f, bx=%f\n",nds->nodes[indexa].x, nds->nodes[indexb].x);
   double diff = (nds->nodes[indexb].x - nds->nodes[indexa].x);
   if (diff>0) return 1;
   else if (diff<0) return -1;
@@ -127,30 +106,33 @@ int xcompare(const void *a, const void *b
 }
 
 
-int ycompare(const void *a, const void *b
-#ifdef USE_QSORT_R
-, void *arg
-#else // USE_QSORT_R
-#endif // USE_QSORT_R
-)
+int ycompare(const void *a, const void *b)
 {
   long indexa = *(long*)a;
   long indexb = *(long*)b;
-#ifdef USE_QSORT_R
-  MFRNodeArray *nds = (MFRNodeArray *)arg;
-#else // USE_QSORT_R
   MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
-#endif // USE_QSORT_R
   double diff = (nds->nodes[indexb].y - nds->nodes[indexa].y);
   if (diff>0) return 1;
   else if (diff<0) return -1;
   else return 0;
+}
 
+
+int sizecompare(const void *a, const void *b)
+{
+  long indexa = *(long*)a;
+  long indexb = *(long*)b;
+  MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
+  double diff = (nds->nodes[indexb].size - nds->nodes[indexa].size);
+  if (diff>0) return 1;
+  else if (diff<0) return -1;
+  else return 0;
 }
 
 void MFRQuadTree::BuildTree(int maxNodesPerQuad)
 {
   maxNodesPerQuadUsed = maxNodesPerQuad;
+
   buildcount = 0;
 fprintf(stderr,"Start building\n");fflush(stderr);
   BuildTree(root, maxNodesPerQuad);
@@ -172,16 +154,34 @@ void MFRQuadTree::debug_show_sorted(char* name, QuadNode* r)
 
 void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
 {
-  if ((r->highindex - r->lowindex) > maxNodesPerQuad)
+
+
+  /* just to make sure there are enough nodes to split after assigning
+   * maxNodesPerQuad to this node.
+   */
+  int realMax = maxNodesPerQuad;
+  if (quadLevels)
   {
+    realMax = (realMax*3)/2;
+  }
+
+  if ((r->highindex - r->lowindex) > realMax)
+  {
+    int thislow=0, thishigh=0;
+
+    if (quadLevels)
+    {
+      global_mfr_node_array = &nodes;
+      qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),sizecompare);
+      thislow = r->lowindex;
+      thishigh = thislow + maxNodesPerQuad;
+      r->lowindex = thishigh;
+    }
+
     if (r->xmax-r->xmin > r->ymax-r->ymin)
     {
-#ifdef USE_QSORT_R
-      qsort_r(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),xcompare, &nodes);
-#else // USE_QSORT_R
       global_mfr_node_array = &nodes;
       qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),xcompare);
-#endif // USE_QSORT_R
 
 //debug_show_sorted("Sorted X", r);
 
@@ -204,12 +204,8 @@ void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
     }
     else
     {
-#ifdef USE_QSORT_R
-      qsort_r(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),ycompare, &nodes);
-#else // USE_QSORT_R
       global_mfr_node_array = &nodes;
       qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),ycompare);
-#endif // USE_QSORT_R
 
 
 //debug_show_sorted("Sorted Y", r);
@@ -230,6 +226,11 @@ void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
 
       BuildTree(r->left, maxNodesPerQuad);
       BuildTree(r->right, maxNodesPerQuad);
+    }
+    if (quadLevels)
+    {
+      r->lowindex = thislow;
+      r->highindex = thishigh;
     }
   }
   else
@@ -329,9 +330,6 @@ void MFRQuadTree::DetermineStats(MFREdgeArray &edges)
 }
 
 
-
-
-
 void MFRQuadTree::AssignQuadIds()
 {
   char namebuilder[MAX_QUADID_LEN];
@@ -350,6 +348,17 @@ void MFRQuadTree::AssignQuadIds(QuadNode *r, char* namebuilder)
   {
     case QuadNode::SplitX:
     case QuadNode::SplitY:
+      if (quadLevels)
+      {
+        strcpy(r->quadid,namebuilder);
+        {
+          int i;
+          for (i=r->lowindex;i<r->highindex;i++)
+	  {
+	    nodes.nodes[index[i]].quadNode = r;
+          }
+        }
+      }
       AssignQuadIds(r->left, leftname);
       AssignQuadIds(r->right, rightname);
       break;

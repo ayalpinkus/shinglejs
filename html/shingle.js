@@ -311,7 +311,7 @@ var shingle = shingle || (function () {
 			}
 			
 			// Too small? don't draw.
-			if ((root["xmax"]-root["xmin"]) < 0.2*(screenrect[2]-screenrect[0])) {
+			if ((root["xmax"]-root["xmin"]) < 0.25*(screenrect[2]-screenrect[0])) {
 				return false;
 			}
 
