@@ -39,6 +39,8 @@ var shingle = shingle || (function () {
 				edgeColor: [213, 213, 213],
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
+				nodeRadiusScaleFactor: 1/300.0 ,
+				nodeRadiusScalePower: 0.75 ,
 				fontFamily: "sans",
 				fontSize: 18,
 				relatedNodesFontSize: 18,
@@ -455,7 +457,7 @@ var shingle = shingle || (function () {
 
 			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
 			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
-			nodeRadiusScale = mapinfo["averageQuadWidth"] / 300.0;
+			nodeRadiusScale = mapinfo["averageQuadWidth"] *options.nodeRadiusScaleFactor;
 
 			if (nodeRadiusScale > 1)
 				nodeRadiusScale = 1;
@@ -941,7 +943,7 @@ var shingle = shingle || (function () {
 			{
 				range = (nodesize - minsize) / (maxsize - minsize);
 			}
-			range = Math.pow(range, 0.75);
+			range = Math.pow(range, options.nodeRadiusScalePower);
 
 			return range;
 		}

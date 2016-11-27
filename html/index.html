@@ -303,6 +303,10 @@ This distribution comes with one example graph, 'sampledata/random-graph_500000.
       el: document.getElementById("shinglecontainer"),
       // supply info panel content
       infoContentEl: theInfoData.el,
+
+      nodeRadiusScaleFactor : 1/200.0,
+      nodeRadiusScalePower: 0.33,
+
       onClear: function() {
         //
         // clear the info panel
