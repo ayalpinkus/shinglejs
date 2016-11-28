@@ -315,6 +315,11 @@ var shingle = shingle || (function () {
 				return false;
 			}
 
+
+			if ((root["ymax"]-root["ymin"]) < 0.25*(screenrect[3]-screenrect[1])) {
+				return false;
+			}
+
 			// Else, draw.
 			return true;
 		}
