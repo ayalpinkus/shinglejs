@@ -382,19 +382,39 @@ int main(int argc, char** argv)
 
   nrquadnodeswritten = 0;
 
+
+
   int nredges = edges.nredges;
   int i;
 
+
+#define MAX_EDGES_PER_NODE 25
+  int *edgeCount = new int[nodes.nrnodes];
+  for (i=0;i<nodes.nrnodes;i++)
+  {
+    edgeCount[i] = 0;
+  }
+
   for (i=0;i<nredges;i++)
   {
+  
+    int indexA = edges.edges[i].nodeA - &nodes.nodes[0];
+    int indexB = edges.edges[i].nodeB - &nodes.nodes[0];
 
+    edgeCount[indexA]++;
+    edgeCount[indexB]++;
 
-/*TODO remove?
-    edges.edges[i].nodeA = nodes.LookUp(edges.edges[i].nodeidA);
-    edges.edges[i].nodeB = nodes.LookUp(edges.edges[i].nodeidB);
-*/
-
-
+    if (quadLevels)
+    {
+      if (edgeCount[indexA]>=MAX_EDGES_PER_NODE)
+      {
+        continue;
+      }
+      if (edgeCount[indexB]>=MAX_EDGES_PER_NODE)
+      {
+        continue;
+      }
+    }  
     edges.edges[i].nodeA->quadNode->edges = new LinkedEdges(&edges.edges[i], edges.edges[i].nodeA->quadNode->edges);
 
     if (edges.edges[i].nodeA->quadNode != edges.edges[i].nodeB->quadNode)
@@ -402,6 +422,20 @@ int main(int argc, char** argv)
       edges.edges[i].nodeB->quadNode->edges = new LinkedEdges(&edges.edges[i], edges.edges[i].nodeB->quadNode->edges);
     }
   }
+
+  int maxedges = 0;
+  for (i=0;i<nodes.nrnodes;i++)
+  {
+    if (edgeCount[i] > maxedges)
+    {
+      maxedges = edgeCount[i];
+    }
+  }
+  fprintf(stderr,"Maximum edges per node found was %d\n",maxedges);
+
+  
+  delete[] edgeCount;
+  
   fprintf(stderr, "Done assigning edges to quads\n");fflush(stderr);
 
   quadTree.DetermineStats(edges);
