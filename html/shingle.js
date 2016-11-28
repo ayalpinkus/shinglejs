@@ -548,7 +548,6 @@ var shingle = shingle || (function () {
 			});
 		}
 
-//hier
 		function loadNonCompactQuad(quadid,loadReferenced) {
 			if (!quadLevels) {
 				return;
@@ -559,43 +558,61 @@ var shingle = shingle || (function () {
 				if (graphs[quadid]["header"]["compact"] != true) {
 					doload=false;
 				}
-				if (graphs[quadid]["header"]["non-compact-being-loaded"] == true) {
-					doload=false;
-				}
 			}
 
 			if (doload) {
-				graphs[quadid]["header"]["non-compact-being-loaded"] = true;
 				var json_url = options.graphPath + "e" + quadid + ".json";
 				ajaxGet(json_url, function(response) {
 					var graph = JSON.parse(response);
 					graphs[quadid] = graph;
 					scheduler.addTask(new ScheduledAppendQuad(quadid));
-/*
-					if (loadReferenced) {
-						var referenced = graph["referenced"];
-						var j;
-						for (j = 0; j < referenced.length; j++) {
-							var othergraph = graphs[referenced[j]];
-							if (othergraph != null) {
-								if (othergraph["header"]["compact"] != true) {
-									continue;
-								}
-							}
 
-							// prevent recursive loading
-							if (othergraph != null) {
-								if (othergraph["header"]["non-compact-being-loaded"] == true) {
-									continue;
-								}
-							}
-							loadNonCompactQuad(referenced[j],false);
-						}
+
+					if (loadReferenced) {
+						loadReferencedQuads(graph);
 					}
-*/
 				});
 			}
+			else if (loadReferenced) {
+				loadReferencedQuads(graphs[quadid]);
+			}
 		}
+
+
+		function loadReferencedQuads(graph) {
+			var extendedQuadsToLoad = {};
+			var nredges = graph["relations"].length;
+			var k;
+			for (k = 0; k < nredges; k++) {
+				var nodeidA = graph["relations"][k].nodeidA;
+				var quadA = graph["relations"][k].quadA;
+
+				var nodeidB = graph["relations"][k].nodeidB;
+				var quadB = graph["relations"][k].quadB;
+
+				if (nodeidA == currentHighlightedNode.currentnodeid || nodeidB == currentHighlightedNode.currentnodeid) {
+					if (!graphs[quadA]) {
+						extendedQuadsToLoad[quadA] = 1;
+					} else if (graphs[quadA]["header"]["compact"] == true) {
+						extendedQuadsToLoad[quadA] = 1;
+					}
+
+
+					if (!graphs[quadB]) {
+						extendedQuadsToLoad[quadB] = 1;
+					} else if (graphs[quadB]["header"]["compact"] == true) {
+						extendedQuadsToLoad[quadB] = 1;
+					}
+				}
+			}
+
+			for (var key in extendedQuadsToLoad) {
+				if (extendedQuadsToLoad.hasOwnProperty(key)) {
+					loadNonCompactQuad(key,false);
+				}
+			}
+		}
+
 
 		function debugLog(str) {
 			if (options.debug) {
@@ -1058,7 +1075,7 @@ var shingle = shingle || (function () {
 				}
 				var nredges = graph["relations"].length;
 
-				if ((nredges > 100)) nredges = 100;
+				if (nredges > 100) nredges = 100;
 
 				var glin = document.getElementById(this.quadid);
 				if (glin == null) {
