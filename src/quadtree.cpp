@@ -247,7 +247,7 @@ int MFRQuadTree::quadContainsNode(QuadNode* root,MFRNode* node)
   for (i=root->lowindex;i<root->highindex;i++)
   {
     int ind = index[i];
-    if (!strcmp(nodes.nodes[ind].nodeid,node->nodeid))
+    if (!strcmp(nodes.nodes[ind].nodeidp,node->nodeidp))
     {
       return 1;
     }
@@ -284,17 +284,17 @@ void MFRQuadTree::DetermineStats(MFREdgeArray &edges)
   double totalsum=0;
   for (i=0;i<edges.nredges;i++)
   {
-    MFRNode* nodeA = nodes.LookUp(edges.edges[i].nodeidA);
-    MFRNode* nodeB = nodes.LookUp(edges.edges[i].nodeidB);
+    MFRNode* nodeA = edges.edges[i].nodeA; // nodes.LookUp(edges.edges[i].nodeidA);
+    MFRNode* nodeB = edges.edges[i].nodeB; // nodes.LookUp(edges.edges[i].nodeidB);
     if (nodeA == NULL || nodeB == NULL)
     {
       if (nodeA == NULL)
       {
-        fprintf(stderr, "WARNING: node missing from node list: %s\n",edges.edges[i].nodeidA);
+        fprintf(stderr, "WARNING: node missing from node list: %s\n", "@@@" /* edges.edges[i].nodeidA */ );
       }
       if (nodeB == NULL)
       {
-        fprintf(stderr, "WARNING: node missing from node list: %s\n",edges.edges[i].nodeidB);
+        fprintf(stderr, "WARNING: node missing from node list: %s\n","@@@" /* edges.edges[i].nodeidB */);
       }
     }
     else
@@ -310,6 +310,7 @@ void MFRQuadTree::DetermineStats(MFREdgeArray &edges)
   double w=0;
   double h=0;
   int n=0;
+
   FindQuadSizes(root, w, h, n);
 
   totalMapWidth = root->xmax - root->xmin;

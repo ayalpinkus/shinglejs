@@ -101,19 +101,19 @@ static void processFile(const char* fname)
       {
         tokenizer.LookAhead();
         tokenizer.Match(":");
-        strcpy(node.nodeid,tokenizer.nextToken);
+        node.SetNodeId(tokenizer.nextToken);
       }
       else if (!strcasecmp(tokenizer.nextToken, "name"))
       {
         tokenizer.LookAhead();
         tokenizer.Match(":");
-        strcpy(node.name,tokenizer.nextToken);
+        node.SetName(tokenizer.nextToken);
       }
       else if (!strcasecmp(tokenizer.nextToken, "author_name"))
       {
         tokenizer.LookAhead();
         tokenizer.Match(":");
-        strcpy(node.name,tokenizer.nextToken);
+        node.SetName(tokenizer.nextToken);
       }
       else if (!strcasecmp(tokenizer.nextToken, "x"))
       {
@@ -159,13 +159,13 @@ static void processFile(const char* fname)
 
   while (!strcmp(tokenizer.nextToken, "["))
   {
-    MFREdge edge;
+    MFREdgeExt edge;
     tokenizer.Match("[");
 
-    strcpy(edge.nodeidA,tokenizer.nextToken);
+    edge.SetNodeIdA(tokenizer.nextToken);
     tokenizer.LookAhead();
     tokenizer.Match(",");
-    strcpy(edge.nodeidB,tokenizer.nextToken);
+    edge.SetNodeIdB(tokenizer.nextToken);
     tokenizer.LookAhead();
     tokenizer.Match("]");
     if (!strcmp(tokenizer.nextToken, ","))
@@ -180,7 +180,7 @@ static void processFile(const char* fname)
     if (eentry == edgeids.end())
     {
       edgeids.insert(thisedge);
-      fwrite(&edge,sizeof(MFREdge),1,edge_out_file);
+      fwrite(&edge,sizeof(MFREdgeExt),1,edge_out_file);
     }
   }
 

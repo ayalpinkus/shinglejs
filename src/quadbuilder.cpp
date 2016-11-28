@@ -14,11 +14,7 @@
 #include "hashtable.h"
 
 
-#define SEPARATE_CLICKABLE_EDGES
-
-#ifdef SEPARATE_CLICKABLE_EDGES
-#define EDGECOUNT_LIMIT 100
-#endif // SEPARATE_CLICKABLE_EDGES
+#define COMPACT_EDGECOUNT_LIMIT 100
 
 static int quadLevels=1;
 
@@ -81,7 +77,7 @@ static void write_root(FILE* mapinfo_json_file, QuadNode* root)
 
 int nrquadnodeswritten = 0;
 
-static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree, QuadNode* root)
+static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree, QuadNode* root, int compact)
 {
   FILE* json_out_file = MFRUtils::OpenFile(rootname, "w");
   int nredges = edges.nredges;
@@ -102,7 +98,7 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
         fprintf(json_out_file,"    ,");
       }
       first = 0;
-      fprintf(json_out_file,"  \"%s\": %d\n", nodes.nodes[index].nodeid,i-root->lowindex);
+      fprintf(json_out_file,"  \"%s\": %d\n", nodes.nodes[index].nodeidp,i-root->lowindex);
     }
   }
   fprintf(json_out_file,"  },\n");
@@ -149,19 +145,31 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
     }
     edgelist = edgelist->next;
 
-#ifdef EDGECOUNT_LIMIT
-    ecount++;
-    if (ecount>EDGECOUNT_LIMIT)
+/*TODO remove?
+    if (compact)
     {
-      break;
+      ecount++;
+      if (ecount>COMPACT_EDGECOUNT_LIMIT)
+      {
+        break;
+      }
     }
-#endif // EDGECOUNT_LIMIT
+*/
   }
 
   fprintf(json_out_file,"  ],\n");
 
 
   fprintf(json_out_file,"  \"header\": {\n");
+  if (compact)
+  {
+    fprintf(json_out_file,"    \"compact\": true,\n");
+  }
+  else
+  {
+    fprintf(json_out_file,"    \"compact\": false,\n");
+  }
+  
   fprintf(json_out_file,"    \"xmin\": %f,\n", root->xmin);
   fprintf(json_out_file,"    \"xmax\": %f,\n", root->xmax);
   fprintf(json_out_file,"    \"ymin\": %f,\n", root->ymin);
@@ -183,8 +191,8 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
       }
       first = 0;
       fprintf(json_out_file,"    {\n");
-      fprintf(json_out_file,"      \"nodeid\": \"%s\",\n",nodes.nodes[index].nodeid);
-      fprintf(json_out_file,"      \"name\": \"%s\",\n",nodes.nodes[index].name);
+      fprintf(json_out_file,"      \"nodeid\": \"%s\",\n",nodes.nodes[index].nodeidp);
+      fprintf(json_out_file,"      \"name\": \"%s\",\n",nodes.nodes[index].namep);
       fprintf(json_out_file,"      \"x\": %f,\n",nodes.nodes[index].x);
       fprintf(json_out_file,"      \"y\": %f,\n",nodes.nodes[index].y);
       fprintf(json_out_file,"      \"size\": %f,\n",nodes.nodes[index].size);
@@ -217,21 +225,21 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
     fprintf(json_out_file,"    {\n");
 
     fprintf(json_out_file,"      \"quadA\": \"%s\",\n", nodeA->quadNode->quadid);
-    fprintf(json_out_file,"      \"nodeidA\": \"%s\",\n", nodeA->nodeid);
+    fprintf(json_out_file,"      \"nodeidA\": \"%s\",\n", nodeA->nodeidp);
     fprintf(json_out_file,"      \"quadB\": \"%s\",\n", nodeB->quadNode->quadid);
-    fprintf(json_out_file,"      \"nodeidB\": \"%s\"\n", nodeB->nodeid);
+    fprintf(json_out_file,"      \"nodeidB\": \"%s\"\n", nodeB->nodeidp);
     fprintf(json_out_file,"    }\n");
 
     edgelist = edgelist->next;
 
-
-#ifdef EDGECOUNT_LIMIT
-    ecount++;
-    if (ecount>EDGECOUNT_LIMIT)
+    if (compact)
     {
-      break;
+      ecount++;
+      if (ecount>COMPACT_EDGECOUNT_LIMIT)
+      {
+        break;
+      }
     }
-#endif // EDGECOUNT_LIMIT
   }
 
 
@@ -241,7 +249,7 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
   fclose(json_out_file);
 }
 
-static void WriteRootJSON(const char* fnamebuilder, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree, QuadNode *root)
+static void WriteRootJSON(const char* fnamebuilder, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree, QuadNode *root, int compact)
 {
   char rootname[1024];
   char leftname[1024];
@@ -257,13 +265,13 @@ static void WriteRootJSON(const char* fnamebuilder, MFRNodeArray &nodes, MFREdge
     case QuadNode::SplitY:
       if (quadLevels)
       {
-        WriteLeafJSON(rootname, nodes, edges, quadTree, root);
+        WriteLeafJSON(rootname, nodes, edges, quadTree, root, compact);
       }
-      WriteRootJSON(leftname, nodes, edges, quadTree, root->left);
-      WriteRootJSON(rightname, nodes, edges, quadTree, root->right);
+      WriteRootJSON(leftname, nodes, edges, quadTree, root->left, compact);
+      WriteRootJSON(rightname, nodes, edges, quadTree, root->right, compact);
       break;
     case QuadNode::Leaf:
-      WriteLeafJSON(rootname, nodes, edges, quadTree, root);
+      WriteLeafJSON(rootname, nodes, edges, quadTree, root, compact);
       break;
     default:
       fprintf(stderr,"ERROR: unrecognized quad node type %d\n",root->splitType);
@@ -304,8 +312,20 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
   fprintf(stderr,"Writing rootjson\n");fflush(stderr);
   {
     char fnamebuilder[1024];
-    sprintf(fnamebuilder,"%squad_",map_out_path);
-    WriteRootJSON(fnamebuilder, nodes, edges, quadTree, quadTree.root);
+
+    if (quadLevels)
+    {
+      sprintf(fnamebuilder,"%squad_",map_out_path);
+      WriteRootJSON(fnamebuilder, nodes, edges, quadTree, quadTree.root, 1);
+
+      sprintf(fnamebuilder,"%sequad_",map_out_path);
+      WriteRootJSON(fnamebuilder, nodes, edges, quadTree, quadTree.root, 0);
+    }
+    else
+    {
+      sprintf(fnamebuilder,"%squad_",map_out_path);
+      WriteRootJSON(fnamebuilder, nodes, edges, quadTree, quadTree.root, 0);
+    }
   }
   fprintf(stderr,"Finished writing map\n");fflush(stderr);
 
@@ -324,13 +344,13 @@ static void WriteHashtable(const char* map_out_path, MFRNodeArray &nodes, MFREdg
   int i;
   for (i=0;i<nodes.nrnodes;i++)
   {
-    int bin = hashtable.Hash(nodes.nodes[i].nodeid);
+    int bin = hashtable.Hash(nodes.nodes[i].nodeidp);
     if (!hashtable.first[bin])
     {
       fprintf(hashtable.buckets[bin],",\n");
     }
     hashtable.first[bin] = 0;
-    fprintf(hashtable.buckets[bin],"\"%s\" : [%f, %f ]\n",nodes.nodes[i].nodeid, nodes.nodes[i].x, nodes.nodes[i].y);
+    fprintf(hashtable.buckets[bin],"\"%s\" : [%f, %f ]\n",nodes.nodes[i].nodeidp, nodes.nodes[i].x, nodes.nodes[i].y);
   }
 }
 
@@ -346,7 +366,7 @@ int main(int argc, char** argv)
   const char* edge_in_fname = argv[2];
   const char* map_out_path = argv[3];
   MFRNodeArray nodes(node_in_fname);
-  MFREdgeArray edges(edge_in_fname);
+  MFREdgeArray edges(edge_in_fname, nodes);
 
 //  nodes.debug_show_if_sorted(12);
   
@@ -355,11 +375,8 @@ int main(int argc, char** argv)
 #define MAX_NODES_PER_QUAD 50  
   
   quadTree.BuildTree(MAX_NODES_PER_QUAD);
-  quadTree.AssignQuadIds();
-  quadTree.DetermineStats(edges);
 
-  fprintf(stderr,"Writing nodeid lookup table\n");fflush(stderr);
-  WriteHashtable(map_out_path, nodes, edges, quadTree);
+  quadTree.AssignQuadIds();
 
   fprintf(stderr,"Writing out quadtree\n");fflush(stderr);
 
@@ -367,17 +384,30 @@ int main(int argc, char** argv)
 
   int nredges = edges.nredges;
   int i;
+
   for (i=0;i<nredges;i++)
   {
+
+
+/*TODO remove?
     edges.edges[i].nodeA = nodes.LookUp(edges.edges[i].nodeidA);
     edges.edges[i].nodeB = nodes.LookUp(edges.edges[i].nodeidB);
+*/
+
+
     edges.edges[i].nodeA->quadNode->edges = new LinkedEdges(&edges.edges[i], edges.edges[i].nodeA->quadNode->edges);
+
     if (edges.edges[i].nodeA->quadNode != edges.edges[i].nodeB->quadNode)
     {
       edges.edges[i].nodeB->quadNode->edges = new LinkedEdges(&edges.edges[i], edges.edges[i].nodeB->quadNode->edges);
     }
   }
   fprintf(stderr, "Done assigning edges to quads\n");fflush(stderr);
+
+  quadTree.DetermineStats(edges);
+
+  fprintf(stderr,"Writing nodeid lookup table\n");fflush(stderr);
+  WriteHashtable(map_out_path, nodes, edges, quadTree);
 
   WriteMap(map_out_path, nodes, edges, quadTree);
   fprintf(stderr,"Finisned\n");fflush(stderr);

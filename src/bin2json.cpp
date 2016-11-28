@@ -26,8 +26,8 @@ static void WriteJSONfile(FILE*f, MFRNodeArray &nodes, MFREdgeArray &edges)
   for (i=0;i<nodes.nrnodes;i++)
   {
     fprintf(f,"    {\n");
-    fprintf(f,"      \"nodeid\": \"%s\",\n", nodes.nodes[i].nodeid);
-    fprintf(f,"      \"name\": \"%s\",\n", nodes.nodes[i].name);
+    fprintf(f,"      \"nodeid\": \"%s\",\n", nodes.nodes[i].nodeidp);
+    fprintf(f,"      \"name\": \"%s\",\n", nodes.nodes[i].namep);
     fprintf(f,"      \"x\": %g,\n", nodes.nodes[i].x);
     fprintf(f,"      \"y\": %g,\n", nodes.nodes[i].y);
     fprintf(f,"      \"size\": %g,\n", nodes.nodes[i].size);
@@ -50,8 +50,8 @@ static void WriteJSONfile(FILE*f, MFRNodeArray &nodes, MFREdgeArray &edges)
 
     fprintf(f,"    {\n");
 
-    fprintf(f,"      \"nodeidA\": \"%s\",\n", edges.edges[i].nodeidA);
-    fprintf(f,"      \"nodeidB\": \"%s\",\n", edges.edges[i].nodeidB);
+    fprintf(f,"      \"nodeidA\": \"%s\",\n", edges.edges[i].nodeA->nodeidp /* edges.edges[i].nodeidA */ );
+    fprintf(f,"      \"nodeidB\": \"%s\",\n", edges.edges[i].nodeB->nodeidp /* edges.edges[i].nodeidB */ );
 
 
     fprintf(f,"      \"strength\": %f\n", 1.0);
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
 
  
   MFRNodeArray nodes(node_in_fname);
-  MFREdgeArray edges(edge_in_fname);
+  MFREdgeArray edges(edge_in_fname, nodes);
 
   FILE* json_out_file = MFRUtils::OpenFile(json_out_fname,"w");
   WriteJSONfile(json_out_file, nodes, edges);

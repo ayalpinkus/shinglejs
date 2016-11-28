@@ -7,6 +7,14 @@
 #include "MFRUtils.h"
 
 
+MFRNode::~MFRNode()
+{
+  SetName(NULL);
+  SetNodeId(NULL);
+}
+
+
+
 MFRNodeArray::MFRNodeArray(const char* fname)
 {
   FILE* fin = MFRUtils::OpenFile(fname, "r");
@@ -30,7 +38,7 @@ static int nodeCompare(const void *a, const void *b)
 {
   MFRNode* node1 = (MFRNode*)a;
   MFRNode* node2 = (MFRNode*)b;
-  return strcmp(node1->nodeid, node2->nodeid);
+  return strcmp(node1->nodeidp, node2->nodeidp);
 }
 
 void MFRNodeArray::Sort()
@@ -41,7 +49,7 @@ void MFRNodeArray::Sort()
 MFRNode* MFRNodeArray::LookUp(const char* nodeid)
 {
   MFRNode test;
-  strcpy(test.nodeid,nodeid);
+  test.SetNodeId(nodeid);
   return (MFRNode*)bsearch(&test, nodes,
                      nrnodes, sizeof(MFRNode),
                      nodeCompare);
@@ -58,23 +66,66 @@ void MFRNodeArray::debug_show_if_sorted(int nr)
   fprintf(stderr, "Showing first %d nodes:\n",nr);
   for (i=0;i<nr;i++)
   {
-    fprintf(stderr, "\t%s\n",nodes[i].nodeid);
+    fprintf(stderr, "\t%s\n",nodes[i].nodeidp);
   }
 }
 
 
-MFREdgeArray::MFREdgeArray(const char* fname)
+MFREdgeArray::MFREdgeArray(const char* fname, MFRNodeArray& nodes)
 {
   FILE* fin = MFRUtils::OpenFile(fname, "r");
+
+  setvbuf(fin,NULL, _IOFBF, 240000000);
+
   fseek(fin,0,SEEK_END);
   long end = ftell(fin);
+  nredges=end/sizeof(MFREdgeExt);
 
-  edges=(MFREdge*)malloc(end);
-  nredges=end/sizeof(MFREdge);
+  edges=(MFREdgeInt*)malloc(nredges*sizeof(MFREdgeInt));
 
   fseek(fin,0,SEEK_SET);
-  fread(edges,end,1,fin);
+
+  MFREdgeExt extEdge;
+
+  int i;
+  for (i=0;i<nredges;i++)
+  {
+    fread(&extEdge,sizeof(MFREdgeExt),1,fin);
+    edges[i].nodeA = nodes.LookUp(extEdge.nodeidA);
+    edges[i].nodeB = nodes.LookUp(extEdge.nodeidB);
+    
+    if (edges[i].nodeA == NULL)
+    {
+      fprintf(stderr,"Warning: edge %d: id %s for edge not found.\n", i, extEdge.nodeidA);
+    }
+    if (edges[i].nodeB == NULL)
+    {
+      fprintf(stderr,"Warning: edge %d: id %s for edge not found.\n",i, extEdge.nodeidB);
+    }
+    
+  }
   fclose(fin);
+
+/*TODO remove?
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+int diff = &nodes.nodes[1] - &nodes.nodes[0];
+fprintf(stderr,"\t diff = %d\n",diff);
+
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+fprintf(stderr,"@@@@@@@@@@@@@@\n");
+*/
+
+/*TODO remove?
+  int i;
+  for (i=0;i<nredges;i++)
+  {
+    edges[i].nodeA = nodes.LookUp(edges[i].nodeidA);
+    edges[i].nodeB = nodes.LookUp(edges[i].nodeidB);
+  }
+*/
 }
 
 MFREdgeArray::~MFREdgeArray()

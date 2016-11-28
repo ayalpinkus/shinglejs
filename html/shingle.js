@@ -431,8 +431,7 @@ var shingle = shingle || (function () {
 
 						var referenced = graph["referenced"];
 						var j;
-						for (j = 0; j < referenced.length; j++)
-						{
+						for (j = 0; j < referenced.length; j++) {
 							var othergraph = graphs[referenced[j]];
 							if (othergraph == null) {
 								continue;
@@ -547,6 +546,55 @@ var shingle = shingle || (function () {
 				graphs[quadid] = graph;
 				scheduler.addTask(new ScheduledAppendQuad(quadid));
 			});
+		}
+
+//hier
+		function loadNonCompactQuad(quadid,loadReferenced) {
+			if (!quadLevels) {
+				return;
+			}
+			var doload = true;
+			// Check to see if we already have a non-compact quad loaded
+			if (graphs[quadid]) {
+				if (graphs[quadid]["header"]["compact"] != true) {
+					doload=false;
+				}
+				if (graphs[quadid]["header"]["non-compact-being-loaded"] == true) {
+					doload=false;
+				}
+			}
+
+			if (doload) {
+				graphs[quadid]["header"]["non-compact-being-loaded"] = true;
+				var json_url = options.graphPath + "e" + quadid + ".json";
+				ajaxGet(json_url, function(response) {
+					var graph = JSON.parse(response);
+					graphs[quadid] = graph;
+					scheduler.addTask(new ScheduledAppendQuad(quadid));
+/*
+					if (loadReferenced) {
+						var referenced = graph["referenced"];
+						var j;
+						for (j = 0; j < referenced.length; j++) {
+							var othergraph = graphs[referenced[j]];
+							if (othergraph != null) {
+								if (othergraph["header"]["compact"] != true) {
+									continue;
+								}
+							}
+
+							// prevent recursive loading
+							if (othergraph != null) {
+								if (othergraph["header"]["non-compact-being-loaded"] == true) {
+									continue;
+								}
+							}
+							loadNonCompactQuad(referenced[j],false);
+						}
+					}
+*/
+				});
+			}
 		}
 
 		function debugLog(str) {
@@ -1010,7 +1058,7 @@ var shingle = shingle || (function () {
 				}
 				var nredges = graph["relations"].length;
 
-				if (quadLevels && (nredges > 100)) nredges = 100;
+				if ((nredges > 100)) nredges = 100;
 
 				var glin = document.getElementById(this.quadid);
 				if (glin == null) {
@@ -1651,6 +1699,10 @@ var shingle = shingle || (function () {
 			options.onFocus && options.onFocus(quadid, nodeid, getNodesData(quadid, nodeid));
 
 			syncInfoDisplay(true);
+
+			if (quadLevels) {
+				loadNonCompactQuad(quadid, true);
+			}
 
 			last_async_showmfrinfo = new async_showmfrinfo(quadid, nodeid);
 			highlightScheduler.addTask(last_async_showmfrinfo);

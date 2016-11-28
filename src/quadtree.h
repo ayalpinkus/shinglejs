@@ -6,8 +6,8 @@
 class LinkedEdges
 {
   public:
-    LinkedEdges(MFREdge* e, LinkedEdges* n) : edge(e), next(n) {}
-    MFREdge* edge;
+    LinkedEdges(MFREdgeInt* e, LinkedEdges* n) : edge(e), next(n) {}
+    MFREdgeInt* edge;
     LinkedEdges* next;
 };
 
