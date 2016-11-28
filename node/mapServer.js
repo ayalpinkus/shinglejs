@@ -1,8 +1,6 @@
 /*
  *	SERVE map info and quads for use with Shingle.js
  *
- *	NOTE this requires the expressjs module, see http://expressjs.com
- *
  *	A config file is needed for each map you want to use mapServer for
  *
  *	Start mapserver using: node mapServer <mapConfigFile> (no need to supply .js extensions)
@@ -53,6 +51,17 @@ if(!data) {
 var mapInfoStr = data.toString(),
 	mapInfo = JSON.parse(mapInfoStr);
 
+// check / create cache directory if needed
+var cacheDir;
+if(config.mapsNodeRelations) {
+	// use specified dir or current directory named like config file
+	cacheDir = config.cacheDir || 'cache-' + configFile.replace(/\.[^/.]+$/, "") + '/';
+
+	if (!fs.existsSync(cacheDir)){
+	    fs.mkdirSync(cacheDir);
+	}
+}
+
 // prepare data objects
 var root = extend({}, mapInfo.quadtree);
 mapInfo.quadtree = {
@@ -62,8 +71,12 @@ mapInfo.quadtree = {
 	ymax: root.ymax
 };
 
-// locally cached objects
-var quadNodeRelations = {};
+// global variables
+var maxQuadRelations = config.maxQuadRelations || 100,
+	memoryCleanupCycleTime = config.memoryCleanupCycleTime || 30,
+	memoryMaxQuadsToCache = config.memoryMaxQuadsToCache || 25,
+	memoryUsageWarningThreshold = config.memoryUsageWarningThreshold || 256,
+	quadData = {};
 
 // set a flag for the frontend
 mapInfo.loadFromBackend = true;
@@ -100,6 +113,35 @@ function loadFile(fileName, success, error) {
 		}
 	});
 };
+function loadFromCache(fileName, onHit, onMiss, error) {
+	var path = cacheDir + fileName;
+	try {
+		fs.stat(path, function(err, stat) {
+			if(err == null) {
+				fs.readFile(path, function (err, data) {
+					if (!err) {
+						onHit(data.toString());
+					} else {
+						error(err);
+					}
+				});
+			} else {
+			    onMiss();
+			}
+		});
+	} catch (e) {
+	    error(e);
+	}
+};
+function writeCache(fileName, data, success, error) {
+	fs.writeFile(cacheDir + fileName, data, function(err) {
+		if(err && error) {
+			error(err)
+		} else {
+			success && success();
+		}
+	}); 
+};
 function quadIntersects(screenrect, root) {
 	if (root.xmin < screenrect.xmax && root.xmax > screenrect.xmin &&
 		root.ymin < screenrect.ymax && root.ymax > screenrect.ymin) {
@@ -129,12 +171,26 @@ function findQuadsToDrawRecursive(screenrect, root, quadid, quads) {
 // process quads
 // - relations
 // - max #relations to return
+function initQuad(quadid) {
+	if(!quadData[quadid]) {
+		quadData[quadid] = {
+			processing: false,
+			requests: 0,
+			lastTimeStamp: 0,
+			fromCache: 0,
+			fromMemory: 0,
+			processed: 0,
+			flushed: 0,
+			err1NotFound: 0,
+			err2NotFound: 0,
+			errCacheMiss: 0,
+			nodeRelations: {}
+		};
+	}
+}
 function processQuad(quadid, data, callback) {
 
-	quadNodeRelations[quadid] = {
-		processing: true,
-		nodeRelations: {}
-	};
+	quadData[quadid].processing = true;
 
 	try {
 		var quad = JSON.parse(data),
@@ -149,7 +205,7 @@ function processQuad(quadid, data, callback) {
 
 			// first assemble the relations to return (to draw always)
 			// max # relations to return, this should be a parameter / setting in shingle
-			for (var i = 0; i < Math.min(relationsToProcess.length, 100); i++) {
+			for (var i = 0; i < Math.min(relationsToProcess.length, maxQuadRelations); i++) {
 				relations.push(relationsToProcess[i]);
 			};
 			quad.relations = relations;
@@ -181,7 +237,16 @@ function processQuad(quadid, data, callback) {
 					});
 				}
 			};
-			quadNodeRelations[quadid].nodeRelations = nodeRelations;
+
+			// cache the node relations
+			writeCache(quadid + '-node-relations.json', JSON.stringify(nodeRelations), function() {
+				quadData[quadid].processing = false;
+			}, function(e) {
+				quadData[quadid].processing = false;
+				console.log(e);
+			});
+			quadData[quadid].processed = 1;
+			quadData[quadid].nodeRelations = nodeRelations;
 
 		} else {
 			callback(quad);
@@ -189,10 +254,74 @@ function processQuad(quadid, data, callback) {
 	} catch(e) {
 		console.log(e);
 		callback(false);
+		quadData[quadid].processing = false;
 	}
-
-	quadNodeRelations[quadid].processing = false;
 };
+
+// get quad, static version
+function getQuadStatic(quadName, res) {
+	loadFile(quadName, function(data) {
+
+		res.setHeader('Content-Type', 'application/json');
+		res.send( data );
+
+	}, function(err) {
+		res.sendStatus(404);
+	});
+};
+
+// get quad from cache using maxQuadRelations and relation mapping
+function getQuad(quadName, res) {
+
+	var quadid = quadName.split('.json')[0],
+		quadFileName = quadName + '-' + maxQuadRelations +'.json';
+
+	initQuad(quadid);
+
+	loadFromCache(quadFileName, function(data) {
+		// cache hit
+		res.setHeader('Content-Type', 'application/json');
+		res.send( data );
+	}, function() {
+		// cache miss, create
+		loadFile(quadName, function(data) {
+
+			processQuad(quadid, data, function(quad) {
+
+				if(quad && quad.relations) {
+					res.setHeader('Content-Type', 'application/json');
+					res.send( JSON.stringify(quad) );
+					writeCache(quadFileName, JSON.stringify(quad));
+				} else {
+					res.sendStatus(500);
+				}
+			});
+		});
+	}, function(err) {
+		res.sendStatus(404);
+	});
+};
+
+// function for sorting quad data descending on use
+function sortQuadData() {
+	var quadArr = [];
+	for (var quad in quadData) {
+		if (quadData.hasOwnProperty(quad)) {
+            quadArr.push({
+                quad: quad,
+                props: quadData[quad]
+            });
+        }
+    }
+    quadArr.sort(function(a, b) {
+        return b.props.lastTimeStamp - a.props.lastTimeStamp;
+    });
+    return quadArr;
+};
+
+//
+// upon start set the getQuad function once to the version to use
+var getQuad = mapInfo.backendMapsNodeRelations ? getQuad : getQuadStatic;
 
 // create / start the mapinfo server
 var app = express();
@@ -230,24 +359,49 @@ app.get(config.baseUri + 'findRelations', function (req, res, next) {
 
 	// get and return the relations
 	function returnRelations() {
-	 	if(quadNodeRelations[req.query.quadid].nodeRelations[req.query.nodeid]) {
+		quadData[req.query.quadid].requests++;
+		quadData[req.query.quadid].lastTimeStamp = new Date().getTime();
+	 	if(quadData[req.query.quadid].nodeRelations[req.query.nodeid]) {
+			quadData[req.query.quadid].fromMemory++;
 			res.setHeader('Content-Type', 'application/json');
-			res.end( JSON.stringify(quadNodeRelations[req.query.quadid].nodeRelations[req.query.nodeid]) );
+			res.end( JSON.stringify(quadData[req.query.quadid].nodeRelations[req.query.nodeid]) );
 		} else {
-			res.sendStatus(404);
+			loadFromCache(req.query.quadid + '-node-relations.json', function(data) {
+				// cache hit
+				quadData[req.query.quadid].nodeRelations = JSON.parse( data );
+
+				// should be there now
+			 	if(quadData[req.query.quadid].nodeRelations[req.query.nodeid]) {
+					quadData[req.query.quadid].fromCache++;
+					res.setHeader('Content-Type', 'application/json');
+					res.end( JSON.stringify(quadData[req.query.quadid].nodeRelations[req.query.nodeid]) );
+				} else {
+					quadData[req.query.quadid].err1NotFound++;
+					res.sendStatus(404);
+				}
+			}, function() {
+				// cache miss, this should never happen
+				quadData[req.query.quadid].errCacheMiss++;
+				res.sendStatus(500);
+			}, function(err) {
+				quadData[req.query.quadid].err2NotFound++;
+				res.sendStatus(500);
+			});
 		}
 	};
 
 	// the quad in which relations are has been fetched but it may be still processing
-	if(req.query.quadid && req.query.nodeid && quadNodeRelations[req.query.quadid]) {
-		if(quadNodeRelations[req.query.quadid].processing) {
+	if(req.query.quadid && req.query.nodeid) {
+
+		initQuad(req.query.quadid);
+		if(quadData[req.query.quadid].processing) {
 
 			// wait quad being processed
 			var tries = 0,
 				watcher = setInterval(function() {
 
 					tries++;
-					if(!quadNodeRelations[req.query.quadid].processing) {
+					if(!quadData[req.query.quadid].processing) {
 						clearInterval(watcher);
 						returnRelations();
 					} else {
@@ -265,20 +419,60 @@ app.get(config.baseUri + 'findRelations', function (req, res, next) {
 	}
 });
 
-// debug backend page
-app.get(config.baseUri + 'showNodeRelations', function (req, res, next) {
-	var result;
+// stats backend pages
+app.get(config.baseUri + 'memoryMonitor', function (req, res, next) {
+	var memoryUsage = process.memoryUsage(),
+		threshold = memoryUsageWarningThreshold * 1024 * 1024;
 
-	if(req.query.quadid && req.query.nodeid) {
-		result = quadNodeRelations[req.query.quadid].nodeRelations[req.query.nodeid];
-	} else if(req.query.quadid) {
-		result = quadNodeRelations[req.query.quadid];
+	if(memoryUsage && memoryUsage.rss > threshold) {
+		res.setHeader('Content-Type', 'text/html');
+		res.end( 'WARNING' );
 	} else {
-		result = quadNodeRelations;
+		res.sendStatus(404);
 	}
+});
+app.get(config.baseUri + 'stats', function (req, res, next) {
+	var viewComplete = req.query.view && req.query.view.toLowerCase() == 'complete',
+		quadArr = sortQuadData(),
+		stats = {
+			memoryUsage: process.memoryUsage(),
+			quadCount: quadArr.length,
+			quadsWithRelationsCount: 0,
+			totalRelationsCount: 0
+		};
+
+	if(viewComplete) stats.allQuads = [];
+
+	for (var i = 0; i < quadArr.length; i++) {
+
+		var qStats = quadArr[i].props,
+			relationCount = Object.keys(qStats.nodeRelations).length;
+
+		if(relationCount) {
+			stats.quadsWithRelationsCount++;
+			stats.totalRelationsCount += relationCount;
+		}
+
+		if(viewComplete) {
+			stats.allQuads.push({
+				quad: quadArr[i].quad,
+				processing: qStats.processing,
+				requests: qStats.requests,
+				lastDt: (qStats.lastTimeStamp > 0) ? new Date(qStats.lastTimeStamp).toUTCString() : '',
+				fromCache: qStats.fromCache,
+				fromMemory: qStats.fromMemory,
+				processed: qStats.processed,
+				flushed: qStats.flushed,
+				currentInMemory: Object.keys(qStats.nodeRelations).length,
+				cacheMisses: qStats.errCacheMiss,
+				cacheError1: qStats.err1NotFound,
+				cacheError2: qStats.err2NotFound
+			});
+		}
+	};
 
 	res.setHeader('Content-Type', 'application/json');
-	res.end( JSON.stringify(result) );
+	res.end( JSON.stringify(stats) );
 });
 
 /*
@@ -337,28 +531,8 @@ app.get(config.baseUri + 'quad*.json', function (req, res, next) {
 	var quadName = getPathLast(req.originalUrl);
 
 	if(quadName) {
+		getQuad(quadName, res);
 
-		var quadid = quadName.split('.json')[0];
-
-		loadFile(quadName, function(data) {
-
-			if(mapInfo.backendMapsNodeRelations) {
-				processQuad(quadid, data, function(quad) {
-					if(quad && quad.relations) {
-						res.setHeader('Content-Type', 'application/json');
-						res.send( JSON.stringify(quad) );
-					} else {
-						res.sendStatus(500);
-					}
-				});
-			} else {
-				res.setHeader('Content-Type', 'application/json');
-				res.send( data );
-			}
-
-		}, function(err) {
-			res.sendStatus(404);
-		});
 	} else {
 		res.sendStatus(404);
 	}
@@ -374,3 +548,23 @@ var server = app.listen(config.port, config.host, function () {
 	console.log('Using baseDir: ', config.baseDir);
 	console.log('Using mapinfo: ', mapInfo);
 });
+
+//
+// start background cleanup
+setInterval(function() {
+	var	quadArr = sortQuadData();
+
+	// remove nodeRelations of quads not in top memoryMaxQuadsToCache last requested
+	if(quadArr.length > memoryMaxQuadsToCache) {
+		for (var i = memoryMaxQuadsToCache; i < quadArr.length; i++) {
+			var quad = quadArr[i].quad,
+				relationCount = Object.keys(quadData[quad].nodeRelations).length;
+
+			if(relationCount) {
+				quadData[quad].flushed++;
+				quadData[quad].nodeRelations = {};
+				quadData[quad].flushed++;
+			}
+		};
+	}
+}, memoryMaxQuadsToCache * 1000);
