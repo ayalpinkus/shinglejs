@@ -917,7 +917,7 @@ var shingle = shingle || (function () {
 
 
 
-				return ( startScale / currentScale );
+				return ( 15.0 / currentScale );
 
 			}
 
