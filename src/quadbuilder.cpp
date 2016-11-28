@@ -350,7 +350,7 @@ static void WriteHashtable(const char* map_out_path, MFRNodeArray &nodes, MFREdg
       fprintf(hashtable.buckets[bin],",\n");
     }
     hashtable.first[bin] = 0;
-    fprintf(hashtable.buckets[bin],"\"%s\" : [%f, %f ]\n",nodes.nodes[i].nodeidp, nodes.nodes[i].x, nodes.nodes[i].y);
+    fprintf(hashtable.buckets[bin],"\"%s\" : [%f, %f, \"%s\" ]\n",nodes.nodes[i].nodeidp, nodes.nodes[i].x, nodes.nodes[i].y, nodes.nodes[i].quadNode->quadid);
   }
 }
 

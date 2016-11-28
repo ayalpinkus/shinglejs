@@ -88,6 +88,7 @@ var shingle = shingle || (function () {
 			drawQ = {},
 			firstQuadDrawn = false,
 			zoomLevel = false,
+			quadsWithHighlightedNodes = {},
 			svg = document.createElementNS(xmlns, "svg");
 
 		// defaults
@@ -395,6 +396,9 @@ var shingle = shingle || (function () {
 					elid = el.id,
 					header = graphs[elid].header;
 
+				if (quadsWithHighlightedNodes.hasOwnProperty(elid)) {
+					continue;
+				}
 				if (header != null) {
 					if (!shouldQuadBeVisible(screenrect, header)) {
 						el.parentNode.removeChild(el);
@@ -410,6 +414,10 @@ var shingle = shingle || (function () {
 					if (graph != null) {
 						var header = graph.header;
 						if (header != null) {
+							if (quadsWithHighlightedNodes.hasOwnProperty(scheduler.tasks[i].quadid)) {
+								continue;
+							}
+
 							if (!shouldQuadBeVisible(screenrect, header)) {
 								scheduler.tasks.splice(i, 1);
 								i--;
@@ -430,7 +438,10 @@ var shingle = shingle || (function () {
 
 					var header = graph.header;
 
-					if (shouldQuadBeVisible(screenrect, header)) {
+					if (quadsWithHighlightedNodes.hasOwnProperty(quadid)) {
+						visible = true;
+					}
+					else if (shouldQuadBeVisible(screenrect, header)) {
 						visible = true;
 					} else {
 
@@ -475,6 +486,11 @@ var shingle = shingle || (function () {
 					currentTranslateX = -entry[0];
 					currentTranslateY = -entry[1];
 					currentnodeid = nodeid;
+					
+					if (quadLevels) {
+						loadNonCompactQuad(entry[2],true);
+					}
+					
 					options.onNodeFound && options.onNodeFound();
 				} else {
 					doRender = options.renderWhenNodeNotFound;
@@ -568,18 +584,19 @@ var shingle = shingle || (function () {
 			if (doload) {
 				var json_url = options.graphPath + "e" + quadid + ".json";
 				ajaxGet(json_url, function(response) {
+
 					var graph = JSON.parse(response);
 					graphs[quadid] = graph;
 					scheduler.addTask(new ScheduledAppendQuad(quadid));
-
-
 					if (loadReferenced) {
 						loadReferencedQuads(graph);
 					}
+					keepHighlightedNodesLoaded(graph);
 				});
 			}
 			else if (loadReferenced) {
 				loadReferencedQuads(graphs[quadid]);
+				keepHighlightedNodesLoaded(graphs[quadid]);
 			}
 		}
 
@@ -617,6 +634,23 @@ var shingle = shingle || (function () {
 				}
 			}
 		}
+
+		function keepHighlightedNodesLoaded(graph) {
+			quadsWithHighlightedNodes = {};
+			var nredges = graph["relations"].length;
+			var k;
+			for (k = 0; k < nredges; k++) {
+				var quadA = graph["relations"][k].quadA;
+				var quadB = graph["relations"][k].quadB;
+
+				quadsWithHighlightedNodes[quadA] = 1;
+				quadsWithHighlightedNodes[quadB] = 1;
+			}
+		}
+		function forgetHighlightedNodesLoaded() {
+			quadsWithHighlightedNodes = {};
+		}
+
 
 
 		function debugLog(str) {
@@ -1736,6 +1770,7 @@ var shingle = shingle || (function () {
 			nodescontainer.setAttributeNS(null, "opacity", "1");
 
 			currentHighlightedNode.unhighlight();
+			forgetHighlightedNodesLoaded();
 
 			while (highlightedlinescontainer.firstChild) {
 				highlightedlinescontainer.removeChild(highlightedlinescontainer.firstChild);
