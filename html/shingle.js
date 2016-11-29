@@ -1016,7 +1016,7 @@ var shingle = shingle || (function () {
 
 
 
-				return ( 15.0 / currentScale );
+				return ( 18.0 / (currentScale) );
 
 			}
 
@@ -1298,6 +1298,7 @@ var shingle = shingle || (function () {
 
 				circle.addEventListener('mousedown', function (e) {
 					e.cancelBubble = true;
+					currentnodeid = this.getAttribute('data-nodeid');
 					showInfoAbout(this.getAttribute('data-quadid'), this.getAttribute('data-nodeid'));
 				});
 
