@@ -1050,7 +1050,7 @@ var shingle = shingle || (function () {
 				}
 
 				textfield = document.createElementNS(xmlns, "text");
-				textfield.setAttributeNS(null, "class", options.nodeTextClass);
+				textfield.setAttributeNS(null, "class", options.nodeTextClass + " shingle-unselectable");
 				textfield.setAttributeNS(null, "id", elemid);
 				textfield.setAttributeNS(null, "fill", rgbA(options.fontColor));
 				textfield.setAttributeNS(null, "font-family", options.fontFamily);
