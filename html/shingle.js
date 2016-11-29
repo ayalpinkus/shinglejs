@@ -298,6 +298,7 @@ var shingle = shingle || (function () {
 		}
 
 		function quadIntersects(screenrect, root) {
+
 			if (root["xmin"] < screenrect[2] && root["xmax"] > screenrect[0] &&
 				root["ymin"] < screenrect[3] && root["ymax"] > screenrect[1]) {
 				return true;
@@ -367,8 +368,12 @@ var shingle = shingle || (function () {
 					if (!drawnQuad(quadid)) {
 						loadQuad(quadid);
 					}
-					findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
-					findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+					if (root["left"] != null) {
+						findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
+					}
+					if (root["right"] != null) {
+						findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+					}
 				}
 			}
 			else {
@@ -473,6 +478,8 @@ var shingle = shingle || (function () {
 			var has = getHash(nodeid),
 				url = options.graphPath + "table" + has + ".json";
 
+			var highlightedQuad = null;
+
 			if(mapinfo.loadFromBackend) {
 				url += '?nodeid=' + nodeid;
 			}
@@ -486,18 +493,26 @@ var shingle = shingle || (function () {
 					currentTranslateX = -entry[0];
 					currentTranslateY = -entry[1];
 					currentnodeid = nodeid;
-					
-					if (quadLevels) {
-						loadNonCompactQuad(entry[2],true);
-					}
-					
 					options.onNodeFound && options.onNodeFound();
+
+					if (quadLevels) {
+						highlightedQuad = entry[2];
+					}
+
+
+
 				} else {
 					doRender = options.renderWhenNodeNotFound;
 					options.onNodeNotFound && options.onNodeNotFound();
 				}
 				if(doRender) {
 					renderMap();
+
+					if (highlightedQuad != null) {
+//console.log("going to load higlighted quad "+highlightedQuad);
+
+						loadNonCompactQuad(highlightedQuad,true);
+					}
 				}
 			});
 		}
@@ -560,12 +575,18 @@ var shingle = shingle || (function () {
 
 			var json_url = options.graphPath + quadid + ".json";
 
+			if (quadsWithHighlightedNodes.hasOwnProperty(quadid)) {
+				json_url = options.graphPath + "e" + quadid + ".json";
+			}
+
 			ajaxGet(json_url, function(response) {
 				
 				var graph = JSON.parse(response);
 
-				graphs[quadid] = graph;
-				scheduler.addTask(new ScheduledAppendQuad(quadid));
+				if (graphs[quadid] == null) {
+					graphs[quadid] = graph;
+					scheduler.addTask(new ScheduledAppendQuad(quadid));
+				}
 			});
 		}
 
@@ -586,17 +607,52 @@ var shingle = shingle || (function () {
 				ajaxGet(json_url, function(response) {
 
 					var graph = JSON.parse(response);
+
+					if (loadReferenced) {
+						keepHighlightedNodesLoaded(graph);
+					}
+
+					if (graphs[quadid] != null) {
+
+						if (graphs[quadid]["header"]["compact"] == true) {
+							var i;
+							var elements = svg.getElementsByClassName('quadcontainer');
+							for (var i = 0; i < elements.length; i++) {
+								var el = elements[i];
+								var elid = el.id;
+								if (elid == quadid) {
+
+									el.parentNode.removeChild(el);
+									if(quadsDrawn[elid]) {
+										delete quadsDrawn[elid];
+									}
+									break;
+								}
+							}
+							
+						
+							for (i = 1; i < scheduler.tasks.length; i++) {
+								if (scheduler.tasks[i].quadid == quadid) {
+									scheduler.tasks.splice(i, 1);
+									i--;
+								}
+							}
+						}
+						else {
+							return;
+						}
+					}
+
 					graphs[quadid] = graph;
+
 					scheduler.addTask(new ScheduledAppendQuad(quadid));
 					if (loadReferenced) {
 						loadReferencedQuads(graph);
 					}
-					keepHighlightedNodesLoaded(graph);
 				});
 			}
 			else if (loadReferenced) {
 				loadReferencedQuads(graphs[quadid]);
-				keepHighlightedNodesLoaded(graphs[quadid]);
 			}
 		}
 
@@ -612,7 +668,7 @@ var shingle = shingle || (function () {
 				var nodeidB = graph["relations"][k].nodeidB;
 				var quadB = graph["relations"][k].quadB;
 
-				if (nodeidA == currentHighlightedNode.currentnodeid || nodeidB == currentHighlightedNode.currentnodeid) {
+				if (nodeidA == currentnodeid || nodeidB == currentnodeid) {
 					if (!graphs[quadA]) {
 						extendedQuadsToLoad[quadA] = 1;
 					} else if (graphs[quadA]["header"]["compact"] == true) {
@@ -640,18 +696,22 @@ var shingle = shingle || (function () {
 			var nredges = graph["relations"].length;
 			var k;
 			for (k = 0; k < nredges; k++) {
+				var nodeidA = graph["relations"][k].nodeidA;
 				var quadA = graph["relations"][k].quadA;
+				var nodeidB = graph["relations"][k].nodeidB;
 				var quadB = graph["relations"][k].quadB;
 
-				quadsWithHighlightedNodes[quadA] = 1;
-				quadsWithHighlightedNodes[quadB] = 1;
+				if (nodeidA == currentnodeid || nodeidB == currentnodeid) 
+				{
+					quadsWithHighlightedNodes[quadA] = 1;
+					quadsWithHighlightedNodes[quadB] = 1;
+				}
 			}
 		}
+
 		function forgetHighlightedNodesLoaded() {
 			quadsWithHighlightedNodes = {};
 		}
-
-
 
 		function debugLog(str) {
 			if (options.debug) {
@@ -1039,6 +1099,7 @@ var shingle = shingle || (function () {
 			drawQ[quadid] = true;
 
 			this.call = function () {
+
 				appendSvgDOM(quadid);
 
 				setTimeout(function() {
@@ -1108,13 +1169,15 @@ var shingle = shingle || (function () {
 			this.i = 0;
 			this.call = function ()
 			{
+
 				var graph = graphs[this.quadid];
 				if (graph == null) {
 					return true;
 				}
 				var nredges = graph["relations"].length;
 
-				if (nredges > 100) nredges = 100;
+
+//				if (nredges > 100) nredges = 100;
 
 				var glin = document.getElementById(this.quadid);
 				if (glin == null) {
@@ -1131,6 +1194,7 @@ var shingle = shingle || (function () {
 						graphB = graphs[graph["relations"][this.i].quadB];
 					
 					if (graphA == null || graphB == null) {
+
 						this.i = this.i + 1;
 						continue;
 					}
@@ -1169,8 +1233,10 @@ var shingle = shingle || (function () {
 
 					this.i = this.i + 1;
 				}
+
 				return (this.i >= nredges);
 			};
+
 			return this;
 		}
 
@@ -1262,7 +1328,7 @@ var shingle = shingle || (function () {
 		}
 
 		function appendSvgDOM(quadid) {
-			
+
 			if (drawnQuad(quadid)) {
 				return;
 			}
@@ -1323,7 +1389,9 @@ var shingle = shingle || (function () {
 			}
 
 			if (highlightednodescontainer != null) {
+
 				if (highlightednodescontainer.firstChild == null) {
+
 					var lookup = graph["idmap"][currentnodeid];
 					if (lookup) {
 						showInfoAbout(quadid, currentnodeid);
@@ -1347,9 +1415,6 @@ var shingle = shingle || (function () {
 				element.setAttributeNS(null, "font-size", size);
 			}
 			
-			
-
-
 			if (quadLevels) {
 				var nsize = calcCurrentNodeScale(),
 					nodeEls = 	svg.getElementsByClassName(options.nodeClass);
