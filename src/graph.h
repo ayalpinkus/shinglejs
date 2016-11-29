@@ -61,8 +61,8 @@ struct MFREdgeExt
     {
       fprintf(stderr,"WARNING: node id %s too long.\n", nodeid);
     }
-    strncpy(nodeidA,nodeid,MAX_NODE_NAME_LENGTH);
-    nodeidA[MAX_NODE_NAME_LENGTH-1] = 0;
+    strncpy(nodeidA,nodeid,MAX_SCOPUS_ID_LENGTH);
+    nodeidA[MAX_SCOPUS_ID_LENGTH-1] = 0;
   }
   inline void SetNodeIdB(const char* nodeid)
   {
@@ -70,8 +70,8 @@ struct MFREdgeExt
     {
       fprintf(stderr,"WARNING: node id %s too long.\n", nodeid);
     }
-    strncpy(nodeidB,nodeid,MAX_NODE_NAME_LENGTH);
-    nodeidB[MAX_NODE_NAME_LENGTH-1] = 0;
+    strncpy(nodeidB,nodeid,MAX_SCOPUS_ID_LENGTH);
+    nodeidB[MAX_SCOPUS_ID_LENGTH-1] = 0;
   }
 
 //private:
