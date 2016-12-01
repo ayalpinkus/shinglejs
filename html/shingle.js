@@ -658,9 +658,9 @@ var shingle = shingle || (function () {
 
 
 		function loadReferencedQuads(graph) {
-			var extendedQuadsToLoad = {};
-			var nredges = graph["relations"].length;
-			var k;
+			var extendedQuadsToLoad = {},
+				nredges = graph["relations"].length, k;
+
 			for (k = 0; k < nredges; k++) {
 				var nodeidA = graph["relations"][k].nodeidA;
 				var quadA = graph["relations"][k].quadA;
@@ -1692,6 +1692,32 @@ var shingle = shingle || (function () {
 				}
 			};
 
+			this.drawRelatedEdge = function(fromNode, toNode, callback) {
+
+				var node2 = null,
+					graphB = graphs[toNode.quad],
+					tries = 0;
+
+				if(!graphB) loadQuad(toNode.quad);
+
+					var quadWatcher = setInterval(function() {
+
+						graphB = graphs[toNode.quad];
+						if (graphB) {
+							clearInterval(quadWatcher);
+							node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
+							options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+						} else {
+							if(++tries > 99) clearInterval(quadWatcher);
+						}
+
+						if (fromNode != null && node2 != null) {
+							// visualize edge between 2 highlighted nodes
+							self.createEdge(toNode.quad, fromNode, node2);
+						}
+				}, 200);
+			};
+
 			this.findRelationsUsingMap = function () {
 
 				var result = this.findNodeFrom();
@@ -1706,33 +1732,11 @@ var shingle = shingle || (function () {
 
 				ajaxGet(url, function(response) {
 					if(response) {
-
 						var relations = JSON.parse(response);
 
 						if(relations && relations.toNodes && relations.toNodes.length) {
-
-							var node1 = result.node;
-
 							for (var i = 0; i < relations.toNodes.length; i++) {
-
-								var toNode = relations.toNodes[i];
-
-								var node2 = null,
-									graphB = graphs[toNode.quad];
-
-								if (graphB) {
-									var nodeIndex = graphB["idmap"][toNode.node],
-										node2 = graphB["nodes"][nodeIndex];
-
-									options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
-								}
-
-
-								if (node1 != null && node2 != null) {
-
-									// visualize edge between 2 highlighted nodes
-									self.createEdge(toNode.quad, node1, node2);
-								}
+								self.drawRelatedEdge(result.node, relations.toNodes[i]);
 							};
 						}
 					}
@@ -1783,7 +1787,6 @@ var shingle = shingle || (function () {
 					}
 
 					if (node1 != null && node2 != null) {
-
 						// visualize edge between 2 highlighted nodes
 						this.createEdge(quadid2, node1, node2);
 					}
