@@ -361,35 +361,38 @@ var shingle = shingle || (function () {
 			}
 		}
 
-		function findQuadsToDrawRecursive(screenrect, root, quadid) {
+		function findQuadsWithLevelsToDrawRecursive(screenrect, root, quadid) {
 
-			if (quadLevels) {
-				if (shouldQuadBeVisible(screenrect, root)) {
-					if (!drawnQuad(quadid)) {
-						loadQuad(quadid);
-					}
-					if (root["left"] != null) {
-						findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
-					}
-					if (root["right"] != null) {
-						findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
-					}
+			if (shouldQuadBeVisible(screenrect, root)) {
+				if (!drawnQuad(quadid)) {
+					loadQuad(quadid);
 				}
-			}
-			else {
-				if (shouldQuadBeVisible(screenrect, root)) {
-					if (root["type"] == "Leaf") {
-						if (drawnQuad(quadid)) {
-							return;
-						}
-						loadQuad(quadid);
-					} else {
-						findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
-						findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
-					}
+				if (root["left"] != null) {
+					findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
+				}
+				if (root["right"] != null) {
+					findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
 				}
 			}
 		}
+
+		function findQuadsNoLevelsToDrawRecursive(screenrect, root, quadid) {
+
+			if (shouldQuadBeVisible(screenrect, root)) {
+				if (root["type"] == "Leaf") {
+					if (drawnQuad(quadid)) {
+						return;
+					}
+					loadQuad(quadid);
+				} else {
+					findQuadsToDrawRecursive(screenrect, root["left"], (quadid + "l"));
+					findQuadsToDrawRecursive(screenrect, root["right"], (quadid + "r"));
+				}
+			}
+		}
+
+		// quad drawing is based on quadLevels, function is set on map load
+		var findQuadsToDrawRecursive = findQuadsNoLevelsToDrawRecursive;
 
 		function findQuadsToRemove() {
 			var i;
@@ -467,6 +470,9 @@ var shingle = shingle || (function () {
 						}
 					}
 					if (visible == false) {
+						//
+						// HERE bug #1
+						// quads get removed which are visible ..
 						graphs[quadid] = null;
 					}
 				}
@@ -554,6 +560,7 @@ var shingle = shingle || (function () {
 				}
 				if (mapinfo["data-format-version"] > 0) {
 					quadLevels = true;
+					findQuadsToDrawRecursive = findQuadsWithLevelsToDrawRecursive;
 					shouldQuadBeVisible = quadIntersectsAndQuadBigEnough;
 				}
 				
@@ -1023,14 +1030,6 @@ var shingle = shingle || (function () {
 			return 1;
 		}
 
-
-
-
-
-
-
-
-
 		function showNodeName(quadid, node, elemid, onHoverOnly, hoverEl) {
 
 			var textfield = document.getElementById(elemid);
@@ -1153,6 +1152,9 @@ var shingle = shingle || (function () {
 
 			var minsize = mapinfo["minsize"];
 			var maxsize = mapinfo["maxsize"];
+
+			// HERE bug #1
+			// Uncaught TypeError: Cannot read property 'size' of null(…) at 1156
 			var nodesize = node.size;
 
 			var range = 0.5;
@@ -1425,12 +1427,16 @@ var shingle = shingle || (function () {
 					var element = nodeEls[i];
 					var node = getNodesData(element.getAttribute('data-quadid'), element.getAttribute('data-nodeid'));
 
-					var range = nodeRange(node);
-					var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * nsize;
-					element.setAttributeNS(null, "r", nodeRadius);
+					// HERE bug #1, node sometimes not found not in quads and is undefined
+					// for now just ignore ..
+					if(node) {
+						var range = nodeRange(node);
+						var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * nsize;
+						element.setAttributeNS(null, "r", nodeRadius);
+					}
+					// END BUG #1 workaround
 				}
 			}
-
 			
 		}
 
@@ -1460,6 +1466,8 @@ var shingle = shingle || (function () {
 
 		function zoomTo(level) {
 			zoomLevel = level;
+			if(zoomLevel < 0) zoomLevel = 0;
+			if(zoomLevel > 100) zoomLevel = 100;
 			currentScale = 1 / (minScale + (maxScale - minScale) * (zoomLevel / 100.0));
 			setSvgScales();
 			findQuadsToDraw();
@@ -1696,26 +1704,33 @@ var shingle = shingle || (function () {
 
 				var node2 = null,
 					graphB = graphs[toNode.quad],
-					tries = 0;
+					tries = 0,
+					drawEdge = function() {
+						node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
+						options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+						if (fromNode != null && node2 != null) {
+							// visualize edge between 2 highlighted nodes
+							self.createEdge(toNode.quad, fromNode, node2);
+						}
+					};
 
-				if(!graphB) loadQuad(toNode.quad);
+				if(!graphB) {
+
+					loadQuad(toNode.quad);
 
 					var quadWatcher = setInterval(function() {
 
 						graphB = graphs[toNode.quad];
 						if (graphB) {
 							clearInterval(quadWatcher);
-							node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
-							options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+							drawEdge();
 						} else {
 							if(++tries > 99) clearInterval(quadWatcher);
 						}
-
-						if (fromNode != null && node2 != null) {
-							// visualize edge between 2 highlighted nodes
-							self.createEdge(toNode.quad, fromNode, node2);
-						}
-				}, 200);
+					}, 200);
+				} else {
+					drawEdge();
+				}
 			};
 
 			this.findRelationsUsingMap = function () {
@@ -1821,6 +1836,8 @@ var shingle = shingle || (function () {
 			if(options.containerWithFocusClass) {
 				options.el.classList.add(options.containerWithFocusClass);
 			}
+
+			//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
 			options.onFocus && options.onFocus(quadid, nodeid, getNodesData(quadid, nodeid));
 
 			syncInfoDisplay(true);
