@@ -1707,10 +1707,11 @@ var shingle = shingle || (function () {
 					tries = 0,
 					drawEdge = function() {
 						node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
-						options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
 						if (fromNode != null && node2 != null) {
 							// visualize edge between 2 highlighted nodes
 							self.createEdge(toNode.quad, fromNode, node2);
+							// callbacks for related nodes only when on map
+							options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
 						}
 					};
 
@@ -1741,21 +1742,29 @@ var shingle = shingle || (function () {
 					return true;
 				}
 
-				var url = options.graphPath + 'findRelations' +
-						'?quadid=' + quadid +
-						'&nodeid=' + result.node.nodeid;
+				function drawRelatedEdges(quadid) {
 
-				ajaxGet(url, function(response) {
-					if(response) {
-						var relations = JSON.parse(response);
+					var url = options.graphPath + 'findRelations' +
+							'?quadid=' + quadid +
+							'&nodeid=' + result.node.nodeid;
 
-						if(relations && relations.toNodes && relations.toNodes.length) {
-							for (var i = 0; i < relations.toNodes.length; i++) {
-								self.drawRelatedEdge(result.node, relations.toNodes[i]);
-							};
+					ajaxGet(url, function(response) {
+						if(response) {
+							var relations = JSON.parse(response);
+
+							if(relations && relations.toNodes && relations.toNodes.length) {
+								for (var i = 0; i < relations.toNodes.length; i++) {
+									self.drawRelatedEdge(result.node, relations.toNodes[i]);
+								};
+							}
 						}
-					}
-				});
+					});
+				};
+
+				// draw main layer edges
+				drawRelatedEdges(quadid);
+				// draw sublayer edges
+				drawRelatedEdges('e' + quadid);
 
 				// end cycles
 				return true;
@@ -1838,7 +1847,8 @@ var shingle = shingle || (function () {
 			}
 
 			//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
-			options.onFocus && options.onFocus(quadid, nodeid, getNodesData(quadid, nodeid));
+			var nodeData = getNodesData(quadid, nodeid);
+			options.onFocus && options.onFocus(quadid, nodeid, nodeData);
 
 			syncInfoDisplay(true);
 
