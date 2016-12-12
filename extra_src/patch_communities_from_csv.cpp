@@ -190,8 +190,8 @@ int main(int argc, char** argv)
   }
 
 
-
-  std::set<Community> communities;
+  std::map <std::string, int> communities;
+//  std::set<Community> communities;
   int nrcommunities = 0;
 
 
@@ -225,16 +225,25 @@ int main(int argc, char** argv)
     }
 */
 
+ /*
     Community community;
     strcpy(community.communityId,communityId);
     community.index = nrcommunities;
-
+*/
     if (nrcommunities>=MAX_COMMUNITIES)
     {
       fprintf(stderr, "Raise MAX_COMMUNITIES.\n");
       exit(-1);
     }
+    
+    if (communities.find(communityId) == communities.end())
+    {
+      communities[communityId] = nrcommunities;
+      communityColors[nrcommunities] = ColorForDiscipline(asjc);
+      nrcommunities++;
+    }
 
+/*
     std::set<Community>::iterator eentry = communities.find(community); 
     if (eentry == communities.end())
     {
@@ -244,7 +253,17 @@ int main(int argc, char** argv)
     }
     else
     {
+
+        static int count = 0;
+        if (count<500)
+        {
+          fprintf(stderr,"[%s] is at index %d\n", community.communityId, eentry->index);
+        }
+        count++;
+
+    
     }
+*/
   }
 
   fclose(fin);
@@ -266,26 +285,59 @@ int main(int argc, char** argv)
 
   if (nodes_bin_infilename)
   {
+    int not_found = 0;
+    int found = 0;
+
     MFRNodeArray nodes(nodes_bin_infilename);
     int i;
     for (i=0;i<nodes.nrnodes;i++)
     {
-
-    Community community;
-    sprintf(community.communityId,"%ld",nodes.nodes[i].community);
-    std::set<Community>::iterator eentry = communities.find(community); 
-    if (eentry == communities.end())
-    {
-      nodes.nodes[i].community = 0;
-    }
-    else
-    {
-      nodes.nodes[i].community = eentry->index;
-    }
+      char communityId[MAX_COMMUNITY_ID_LENGTH];
+      sprintf(communityId,"%ld",nodes.nodes[i].community);
+      std::map<std::string, int>::iterator entry = communities.find(communityId);
 
 
-//      nodes.nodes[i].community = 0;
+#if 0
+      Community community;
+      sprintf(community.communityId,"%ld",nodes.nodes[i].community);
+      std::set<Community>::iterator eentry = communities.find(community); 
+#endif // 0
+      if (entry == communities.end())
+      {
+        not_found++;
+
+/*
+        static int count = 0;
+        if (count<50)
+        {
+          fprintf(stderr,"Could not find [%s]\n", community.communityId);
+        }
+        count++;
+*/
+
+        nodes.nodes[i].community = 0;
+      }
+      else
+      {
+        found++;
+
+
+/*
+        static int count = 0;
+        if (count<50)
+        {
+          fprintf(stderr,"Found [%s], mapping to %d\n", community.communityId,             eentry->index);
+        }
+        count++;
+*/
+
+        nodes.nodes[i].community = entry->second;
+      }
     }
+    
+fprintf(stderr, "Found: %d, not found:%d\n",found, not_found);
+fprintf(stderr, "nrcommunities = %d\n", nrcommunities);
+    
     FILE* node_out_file = MFRUtils::OpenFile(nodes_bin_outfilename,"w");
     fwrite(nodes.nodes,nodes.nrnodes*sizeof(MFRNode),1,node_out_file);
     fclose(node_out_file);
