@@ -257,6 +257,12 @@ int main(int argc, char** argv)
     
     if (communities.find(communityId) == communities.end())
     {
+
+if (nrcommunities == 1791)
+{
+  fprintf(stderr,"Community 1791, communityId=%s\n",communityId);
+}
+
       communities[communityId] = nrcommunities;
       communityColors[nrcommunities] = ColorForDiscipline(asjc);
       nrcommunities++;
