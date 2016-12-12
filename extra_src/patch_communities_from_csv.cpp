@@ -37,8 +37,14 @@ bool operator< (const Community& lhs, const Community& rhs)
 }  
 
 
+int communnitycounters[MAX_COMMUNITIES];
+int disciplinecounters[100];
+
+
 Rgb ColorForDiscipline(int discipline)
 {
+disciplinecounters[discipline]++;
+
   switch (discipline)
   {
   case 26:
@@ -190,6 +196,19 @@ int main(int argc, char** argv)
   }
 
 
+  {
+    int i;
+    for (i=0;i<100;i++)
+    {
+      disciplinecounters[i] = 0;
+    }
+    for (i=0;i<MAX_COMMUNITIES;i++)
+    {
+      communnitycounters[i] = 0;
+    }
+  }
+
+
   std::map <std::string, int> communities;
 //  std::set<Community> communities;
   int nrcommunities = 0;
@@ -331,6 +350,15 @@ int main(int argc, char** argv)
         count++;
 */
 
+
+/*
+if (entry->second == 1791)
+{
+  fprintf(stderr,"community id 1791 = community id %s\n", communityId);
+}
+*/
+        communnitycounters[entry->second]++;
+
         nodes.nodes[i].community = entry->second;
       }
     }
@@ -342,6 +370,34 @@ fprintf(stderr, "nrcommunities = %d\n", nrcommunities);
     fwrite(nodes.nodes,nodes.nrnodes*sizeof(MFRNode),1,node_out_file);
     fclose(node_out_file);
   }
+
+
+
+  {
+    int i;
+
+/*
+    for (i=0;i<100;i++)
+    {
+      if (disciplinecounters[i] != 0)
+      {
+        fprintf(stderr,"%d: %d\n",i,disciplinecounters[i]);
+      } 
+    }
+*/
+
+/*
+    for (i=0;i<MAX_COMMUNITIES;i++)
+    {
+      if (communnitycounters[i] != 0)
+      {
+        fprintf(stderr,"%d: %d\n",i,communnitycounters[i]);
+      } 
+    }
+*/
+
+  }
+
 
   return 0;
 }
