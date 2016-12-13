@@ -11,7 +11,7 @@
 #include "MFRUtils.h"
 
 #define MAX_COMMUNITY_ID_LENGTH 32
-#define MAX_COMMUNITIES 1000000
+#define MAX_COMMUNITIES 6000
 
 template<class T> class Rgb_t
 {
@@ -23,12 +23,11 @@ public:
   T b;
 };
 
-typedef Rgb_t<unsigned char> Rgb;
-
+typedef Rgb_t<float> Rgb;
 
 template<class T> Rgb_t<T> multiply(Rgb_t<T>& x, Rgb_t<T>& y)
 {
-  return Rgb_t<T>((T)((((double)x.r)*y.r)), (T)((((double)x.g)*y.g)), (T)((((double)x.b)*y.b)) );
+  return Rgb_t<T>((T)((x.r*y.r)/255.0), (T)((x.g*y.g)/255.0), (T)((x.b*y.b)/255.0));
 }
 
 template<class T> Rgb_t<T> multiply(T x, Rgb_t<T>& y)
@@ -43,6 +42,9 @@ double random_r()
 }
 
 Rgb communityColors[MAX_COMMUNITIES];
+int disciplinecounters[100];
+int communnitycounters[MAX_COMMUNITIES];
+int sortedcommunities[MAX_COMMUNITIES];
 
 struct Community
 {
@@ -57,9 +59,13 @@ bool operator< (const Community& lhs, const Community& rhs)
 }  
 
 
-int communnitycounters[MAX_COMMUNITIES];
-int disciplinecounters[100];
 
+int compare_communities(const void *a, const void *b)
+{
+  int* x = (int*)a;
+  int* y = (int*)b;
+  return communnitycounters[(*y)]-communnitycounters[(*x)];
+}
 
 Rgb ColorForDiscipline(int discipline)
 {
@@ -192,6 +198,81 @@ disciplinecounters[discipline]++;
 
 
 
+
+
+Rgb ColorEnumerated(int discipline)
+{
+  switch (discipline%27)
+  {
+  case 0:
+    return Rgb(106,89,209);
+  case 1:
+    return Rgb(132,61,170);
+  case 2:
+    return Rgb(46,134,229);
+  case 3:
+    return Rgb(0,174,240);
+  case 4:
+    return Rgb(52,191,181);
+  case 5:
+    return Rgb(108,234,189);
+  case 6:
+    return Rgb(211,230,9);
+  case 7:
+    return Rgb(183,209,86);
+  case 8:
+    return Rgb(111,188,38);
+  case 9:
+    return Rgb(0,181,78);
+  case 10:
+    return Rgb(97,201,139);
+  case 11:
+    return Rgb(191,80,165);
+  case 12:
+    return Rgb(237,0,140);
+  case 13:
+    return Rgb(204,2,36);
+  case 14:
+    return Rgb(239,94,142);
+  case 15:
+    return Rgb(255,50,43);
+  case 16:
+    return Rgb(248,137,146);
+  case 17:
+    return Rgb(245,93,49);
+  case 18:
+    return Rgb(183,88,2);
+  case 19:
+    return Rgb(255,166,36);
+  case 20:
+    return Rgb(255,206,0);
+  case 21:
+    return Rgb(255,242,0);
+  case 22:
+    return Rgb(229,229,85);
+  case 23:
+    return Rgb(194,183,56);
+  case 24:
+    return Rgb(155,124,54);
+  case 25:
+    return Rgb(44,101,183);
+  default:
+  case 26:
+    return Rgb(145,168,154);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 int main(int argc, char** argv)
 {
   if (argc<2)
@@ -214,6 +295,8 @@ int main(int argc, char** argv)
     fprintf(stderr,"Could not open file %s.\n",csv_filename);
     exit(-1);
   }
+
+  FILE* fstats = fopen("csv-stats.txt","w");
 
 
   {
@@ -292,8 +375,8 @@ if (nrcommunities == 1791)
     }
     else
     {
-      Rgb newcol = ColorForDiscipline(asjc);
-      communityColors[entry->second] = multiply(communityColors[entry->second], newcol);
+//      Rgb newcol = ColorForDiscipline(asjc);
+//      communityColors[entry->second] = multiply(communityColors[entry->second], newcol);
     }
 
 /*
@@ -320,61 +403,6 @@ if (nrcommunities == 1791)
   }
 
   fclose(fin);
-
-  printf("[ ");
-  {
-    int i;
-
-
-/*
-    for (i=0;i<nrcommunities;i++)
-    {
-      Rgb_t<double> rgb;
-      rgb.r = communityColors[i].r;
-      rgb.g = communityColors[i].g;
-      rgb.b = communityColors[i].b;
-
-fprintf(stderr,"%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
-
-      int j;
-      for (j=0;j<1;j++)
-      {
-        Rgb_t<double> rgb2;
-        rgb2.r = random_r()*255.0*0.01+0.99*255;
-        rgb2.g = random_r()*255.0*0.01+0.99*255;
-        rgb2.b = random_r()*255.0*0.01+0.99*255;
- 
-        rgb = multiply(rgb,rgb2);
-
-      }
-fprintf(stderr,"\t%f, %f, %f\n",rgb.r, rgb.g, rgb.b); 
-      communityColors[i].r = (int)rgb.r;
-      communityColors[i].g = (int)rgb.g;
-      communityColors[i].b = (int)rgb.b;
-
-fprintf(stderr,"\t\t%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
-
-    }
-
-    for (i=0;i<nrcommunities;i++)
-    {
-      communityColors[i].r = 255*random_r();
-      communityColors[i].g = 255*random_r();
-      communityColors[i].b = 255*random_r();
-    }
-*/
-
-    for (i=0;i<nrcommunities;i++)
-    {
-      if (i)
-      {
-        printf(", ");
-      }
-      printf("[%d, %d, %d ]", communityColors[i].r, communityColors[i].g, communityColors[i].b);
-    }
-  }
-  printf("]");
-
 
   if (nodes_bin_infilename)
   {
@@ -443,35 +471,131 @@ fprintf(stderr, "nrcommunities = %d\n", nrcommunities);
     FILE* node_out_file = MFRUtils::OpenFile(nodes_bin_outfilename,"w");
     fwrite(nodes.nodes,nodes.nrnodes*sizeof(MFRNode),1,node_out_file);
     fclose(node_out_file);
-  }
 
+
+
+
+    {
+      int i;
+
+      fprintf(fstats, "\nDiscipline count:\n");
+      for (i=0;i<100;i++)
+      {
+        if (disciplinecounters[i] != 0)
+        {
+          fprintf(fstats, "%d: %d\n",i,disciplinecounters[i]);
+        } 
+      }
+
+      for (i=0;i<MAX_COMMUNITIES;i++)
+      {
+        sortedcommunities[i] = i;
+      }
+      qsort(sortedcommunities,MAX_COMMUNITIES,sizeof(int),compare_communities); 
+    } 
+
+  }
 
 
   {
     int i;
 
+
 /*
-    for (i=0;i<100;i++)
+    for (i=0;i<nrcommunities;i++)
     {
-      if (disciplinecounters[i] != 0)
+      Rgb_t<double> rgb;
+      rgb.r = communityColors[i].r;
+      rgb.g = communityColors[i].g;
+      rgb.b = communityColors[i].b;
+
+fprintf(stderr,"%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
+
+      int j;
+      for (j=0;j<1;j++)
       {
-        fprintf(stderr,"%d: %d\n",i,disciplinecounters[i]);
-      } 
+        Rgb_t<double> rgb2;
+        rgb2.r = random_r()*255.0*0.01+0.99*255;
+        rgb2.g = random_r()*255.0*0.01+0.99*255;
+        rgb2.b = random_r()*255.0*0.01+0.99*255;
+ 
+        rgb = multiply(rgb,rgb2);
+
+      }
+fprintf(stderr,"\t%f, %f, %f\n",rgb.r, rgb.g, rgb.b); 
+      communityColors[i].r = (int)rgb.r;
+      communityColors[i].g = (int)rgb.g;
+      communityColors[i].b = (int)rgb.b;
+
+fprintf(stderr,"\t\t%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
+
+    }
+
+    for (i=0;i<nrcommunities;i++)
+    {
+      communityColors[i].r = 255*random_r();
+      communityColors[i].g = 255*random_r();
+      communityColors[i].b = 255*random_r();
     }
 */
 
-/*
-    for (i=0;i<MAX_COMMUNITIES;i++)
-    {
-      if (communnitycounters[i] != 0)
-      {
-        fprintf(stderr,"%d: %d\n",i,communnitycounters[i]);
-      } 
-    }
-*/
 
+
+    {
+      int i;
+      fprintf(fstats, "\nCommunity count:\n");
+      for (i=0;i<MAX_COMMUNITIES;i++)
+      {
+        if (communnitycounters[sortedcommunities[i]] != 0)
+        {
+          fprintf(fstats, "%d: %d\n",sortedcommunities[i],communnitycounters[sortedcommunities[i]]);
+        } 
+      }
+
+      int totalcount = 0;
+#define TOP_SELECT 6    
+      for (i=0;i<TOP_SELECT;i++)
+      {
+        totalcount += communnitycounters[sortedcommunities[i]];
+      }
+      fprintf(fstats, "\nTop %d communites contain %d nodes.\n",TOP_SELECT, totalcount);
+      fprintf(fstats, "\nTop %d colors:\n", TOP_SELECT);
+    }
+
+    for (i=0;i<nrcommunities;i++)
+    {
+      communityColors[sortedcommunities[i]] = ColorEnumerated(i);
+    }
+
+
+    for (i=0;i<TOP_SELECT;i++)
+    {
+      fprintf(fstats, "\t[%d, %d, %d ]\n", 
+        (int)communityColors[sortedcommunities[i]].r,
+        (int)communityColors[sortedcommunities[i]].g,
+        (int)communityColors[sortedcommunities[i]].b);
+    }
+
+
+
+    printf("[ ");
+    for (i=0;i<nrcommunities;i++)
+    {
+      if (i)
+      {
+        printf(", ");
+      }
+      printf("[%d, %d, %d ]", 
+        (int)communityColors[i].r,
+	(int)communityColors[i].g,
+	(int)communityColors[i].b);
+    }
+    printf("]");
   }
 
 
+
+
+  fclose(fstats);
   return 0;
 }
