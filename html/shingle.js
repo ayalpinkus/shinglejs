@@ -152,6 +152,16 @@ var shingle = shingle || (function () {
 			return "rgba(" + r + "," + g + "," + b + "," + a + ")";
 		}
 
+		function getMapRect(callback) {
+
+			var rect = mfrmap.getBoundingClientRect();
+
+			// alternative method to determine this when not visible ?
+			//if(!(rect.top || rect.right || rect.bottom || rect.left)) { }
+
+			return rect;
+		}
+
 		// node color based on community id
 		function nodeColor(node, opacity) {
 			return rgbA(nodeColorTuple(node));
@@ -226,7 +236,7 @@ var shingle = shingle || (function () {
 
 			this.reSchedule = function () {
 				if (this.tasks.length > 0) {
-					this.timer = setTimeout(this.stepaftertimeout, 10);
+					this.timer = setTimeout(this.stepaftertimeout, 33);
 				} else {
 					this.timer = null;
 				}
@@ -280,7 +290,7 @@ var shingle = shingle || (function () {
 
 		function containerWorldRect() {
 			var datarectPixels = boundingrect.getBoundingClientRect(),
-				containerRectPixels = mfrmap.getBoundingClientRect();
+				containerRectPixels = getMapRect();
 
 			var scaleX = ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]) / (datarectPixels.right - datarectPixels.left),
 				scaleY = ((1.0 * mapinfo["quadtree"]["ymax"]) - mapinfo["quadtree"]["ymin"]) / (datarectPixels.bottom - datarectPixels.top);
@@ -515,7 +525,7 @@ var shingle = shingle || (function () {
 					renderMap();
 
 					if (highlightedQuad != null) {
-//console.log("going to load higlighted quad "+highlightedQuad);
+						//console.log("going to load higlighted quad "+highlightedQuad);
 
 						loadNonCompactQuad(highlightedQuad,true);
 					}
@@ -981,7 +991,7 @@ var shingle = shingle || (function () {
 
 				var	ymin = mapinfo["quadtree"]["ymin"],
 					ymax = mapinfo["quadtree"]["ymax"],
-					rect = mfrmap.getBoundingClientRect(),
+					rect = getMapRect(),
 					graphHeight = ymax - ymin,
 					svgHeight = rect.bottom - rect.top,
 					svgHeightFactor = svgHeight / graphHeight;
@@ -1013,7 +1023,7 @@ var shingle = shingle || (function () {
 /*
 				var	ymin = mapinfo["quadtree"]["ymin"],
 					ymax = mapinfo["quadtree"]["ymax"],
-					rect = mfrmap.getBoundingClientRect(),
+					rect = getMapRect(),
 					graphHeight = ymax - ymin,
 					svgHeight = rect.bottom - rect.top,
 					svgHeightFactor = svgHeight / graphHeight;
@@ -1620,27 +1630,37 @@ var shingle = shingle || (function () {
 
 			this.quadid = quadid;
 			this.nodeid = nodeid;
+			this.nodeFrom = false;
+			this.loadingQuad = false;
+			this.relatedDrawn = {},
 			this.j = 0;
 
 			this.findNodeFrom = function() {
-				var result = {
-					graph: null,
-					node: null
-				};
+
+				if(this.nodeFrom) return;
 
 				if (highlightedlinescontainer == null) {
-					return result;
+					return ;
 				}
 
 				if (highlightednodescontainer == null) {
-					return result;
+					return ;
 				}
 
 				var graph = graphs[this.quadid];
 
 				if (graph == null) {
-					return result;
+					if(!this.loadingQuad) {
+						this.loadingQuad = true;
+						loadQuad(quadid);
+					}
+					return ;
 				}
+
+				this.nodeFrom = {
+					graph: null,
+					node: null
+				};
 
 				var node1 = null;
 				var nodeIndex;
@@ -1649,25 +1669,29 @@ var shingle = shingle || (function () {
 
 				node1 = graph["nodes"][nodeIndex];
 
-				result.graph = graph;
-				result.node = node1;
+				if(node1) {
+					this.nodeFrom.graph = graph;
+					this.nodeFrom.node = node1;
 
-				// draw the selected node ?
-				if (highlightednodescontainer != null && node1 != null) {
-					var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered, true);
-					highlightednodescontainer.appendChild(circle);
-
-					// clear and show main node name, only at first cycle !
-					if(this.j < 100) {
-
+					// draw the selected node ?
+					if (highlightednodescontainer != null && node1 != null) {
 						var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered, true);
 						highlightednodescontainer.appendChild(circle);
-						clearNodeNames();
-						showNodeName(this.quadid, node1, "centerednodetext");
+
+						// clear and show main node name, only at first cycle !
+						if(this.j < 100) {
+
+							var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered, true);
+							highlightednodescontainer.appendChild(circle);
+							clearNodeNames();
+							showNodeName(this.quadid, node1, "centerednodetext");
+
+							//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
+							var nodeData = getNodesData(quadid, nodeid);
+							options.onFocus && options.onFocus(quadid, nodeid, nodeData);
+						}
 					}
 				}
-
-				return result;
 			};
 
 			this.createEdge = function(quadid, node1, node2) {
@@ -1700,7 +1724,7 @@ var shingle = shingle || (function () {
 				}
 			};
 
-			this.drawRelatedEdge = function(fromNode, toNode, callback) {
+			this.drawRelatedEdge = function(fromNode, toNode) {
 
 				var node2 = null,
 					graphB = graphs[toNode.quad],
@@ -1709,9 +1733,12 @@ var shingle = shingle || (function () {
 						node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
 						if (fromNode != null && node2 != null) {
 							// visualize edge between 2 highlighted nodes
-							self.createEdge(toNode.quad, fromNode, node2);
-							// callbacks for related nodes only when on map
-							options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+							if(!self.relatedDrawn[node2.nodeid]) {
+								self.relatedDrawn[node2.nodeid] = true;
+								self.createEdge(toNode.quad, fromNode, node2);
+								// callbacks for related nodes only when on map
+								options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+							}
 						}
 					};
 
@@ -1736,85 +1763,86 @@ var shingle = shingle || (function () {
 
 			this.findRelationsUsingMap = function () {
 
-				var result = this.findNodeFrom();
+				if(++this.j > 100) return true;
 
-				if(!result.graph || !result.node || !result.node.nodeid) {
+				this.findNodeFrom();
+
+				if(this.nodeFrom) {
+
+					if(!this.nodeFrom.graph || !this.nodeFrom.node || !this.nodeFrom.node.nodeid) {
+ 						return true;
+					}
+
+					function drawRelatedEdges(quadid) {
+
+						var url = options.graphPath + 'findRelations' +
+								'?quadid=' + quadid +
+								'&nodeid=' + self.nodeFrom.node.nodeid;
+
+						ajaxGet(url, function(response) {
+							if(response) {
+								var relations = JSON.parse(response);
+
+								if(relations && relations.toNodes && relations.toNodes.length) {
+
+									for (var i = 0; i < relations.toNodes.length; i++) {
+										self.drawRelatedEdge(self.nodeFrom.node, relations.toNodes[i]);
+									};
+								}
+							}
+						});
+					};
+
+					// draw main layer edges
+					drawRelatedEdges(quadid);
+					// draw sublayer edges
+					drawRelatedEdges('e' + quadid);
+
+					// end cycles
 					return true;
 				}
-
-				function drawRelatedEdges(quadid) {
-
-					var url = options.graphPath + 'findRelations' +
-							'?quadid=' + quadid +
-							'&nodeid=' + result.node.nodeid;
-
-					ajaxGet(url, function(response) {
-						if(response) {
-							var relations = JSON.parse(response);
-
-							if(relations && relations.toNodes && relations.toNodes.length) {
-								for (var i = 0; i < relations.toNodes.length; i++) {
-									self.drawRelatedEdge(result.node, relations.toNodes[i]);
-								};
-							}
-						}
-					});
-				};
-
-				// draw main layer edges
-				drawRelatedEdges(quadid);
-				// draw sublayer edges
-				drawRelatedEdges('e' + quadid);
-
-				// end cycles
-				return true;
 			};
 
 			this.findRelations = function () {
 
-				var result = this.findNodeFrom();
+				this.findNodeFrom();
 
-				if(!result.graph) {
-					return true;
-				}
+				if(this.nodeFrom) {
 
-				var	graph = result.graph,
-					node1 = result.node;
-
-				// highlight the related nodes / lines
-				// max 100 at one scheduler cycle
-				for (var i = 0; i < 100; i++) {
-
-					var node2 = null;
-					if (this.j >= graph["relations"].length) {
+					if(!this.nodeFrom.graph) {
 						return true;
 					}
 
-					var quadid2 = quadid;
+					var	graph = this.nodeFrom.graph,
+						node1 = this.nodeFrom.node;
 
-					if (graph["relations"][this.j].nodeidA == nodeid) {
-						quadid2 = graph["relations"][this.j].quadB;
-						var graphB = graphs[quadid2];
-						if (graphB) {
-							var nodeIndex = graphB["idmap"][graph["relations"][this.j].nodeidB];
-							node2 = graphB["nodes"][nodeIndex];
-							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
-						}
-					} else if (graph["relations"][this.j].nodeidB == nodeid) {
-						quadid2 = graph["relations"][this.j].quadA;
-						var graphA = graphs[quadid2];
-						if (graphA) {
-							var nodeIndex = graphA["idmap"][graph["relations"][this.j].nodeidA];
-							node2 = graphA["nodes"][nodeIndex];
-							options.onFocusRelatedNode && options.onFocusRelatedNode(quadid2, node2.nodeid, getNodesData(quadid2, node2.nodeid));
-						}
-					}
+					// highlight the related nodes / lines
+					// max 100 at one scheduler cycle
+					for (var i = 0; i < 100; i++) {
 
-					if (node1 != null && node2 != null) {
-						// visualize edge between 2 highlighted nodes
-						this.createEdge(quadid2, node1, node2);
+						var node2 = null;
+						if (this.j >= graph["relations"].length) {
+							return true;
+						}
+
+						var quadid2 = quadid;
+
+						if (graph["relations"][this.j].nodeidA == nodeid) {
+
+							self.drawRelatedEdge(node1, {
+								node: graph["relations"][this.j].nodeidB,
+								quad: graph["relations"][this.j].quadB
+							});
+						} else if (graph["relations"][this.j].nodeidB == nodeid) {
+
+							self.drawRelatedEdge(node1, {
+								node: graph["relations"][this.j].nodeidA,
+								quad: graph["relations"][this.j].quadA
+							});
+						}
+
+						this.j = this.j + 1;
 					}
-					this.j = this.j + 1;
 				}
 			};
 
@@ -1845,10 +1873,6 @@ var shingle = shingle || (function () {
 			if(options.containerWithFocusClass) {
 				options.el.classList.add(options.containerWithFocusClass);
 			}
-
-			//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
-			var nodeData = getNodesData(quadid, nodeid);
-			options.onFocus && options.onFocus(quadid, nodeid, nodeData);
 
 			syncInfoDisplay(true);
 
