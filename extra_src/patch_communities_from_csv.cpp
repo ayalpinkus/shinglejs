@@ -13,14 +13,34 @@
 #define MAX_COMMUNITY_ID_LENGTH 32
 #define MAX_COMMUNITIES 1000000
 
-struct Rgb
+template<class T> class Rgb_t
 {
-  inline Rgb() : r(0), g(0), b(0) {}
-  inline Rgb(unsigned char ar, unsigned char ag, unsigned char ab) : r(ar), g(ag), b(ab) {}
-  unsigned char r;
-  unsigned char g;
-  unsigned char b;
+public:
+  inline Rgb_t() : r(0), g(0), b(0) {}
+  inline Rgb_t(T ar, T ag, T ab) : r(ar), g(ag), b(ab) {}
+  T r;
+  T g;
+  T b;
 };
+
+typedef Rgb_t<unsigned char> Rgb;
+
+
+template<class T> Rgb_t<T> multiply(Rgb_t<T>& x, Rgb_t<T>& y)
+{
+  return Rgb_t<T>((T)((((double)x.r)*y.r)), (T)((((double)x.g)*y.g)), (T)((((double)x.b)*y.b)) );
+}
+
+template<class T> Rgb_t<T> multiply(T x, Rgb_t<T>& y)
+{
+  return Rgb_t<T>(x*y.r, x*y.g, x*y.b);
+}
+
+
+double random_r()
+{
+  return rand() / (RAND_MAX + 1.0);
+}
 
 Rgb communityColors[MAX_COMMUNITIES];
 
@@ -254,8 +274,11 @@ int main(int argc, char** argv)
       fprintf(stderr, "Raise MAX_COMMUNITIES.\n");
       exit(-1);
     }
+
+
+    std::map<std::string, int>::iterator entry = communities.find(communityId);
     
-    if (communities.find(communityId) == communities.end())
+    if (entry == communities.end())
     {
 
 if (nrcommunities == 1791)
@@ -266,6 +289,11 @@ if (nrcommunities == 1791)
       communities[communityId] = nrcommunities;
       communityColors[nrcommunities] = ColorForDiscipline(asjc);
       nrcommunities++;
+    }
+    else
+    {
+      Rgb newcol = ColorForDiscipline(asjc);
+      communityColors[entry->second] = multiply(communityColors[entry->second], newcol);
     }
 
 /*
@@ -296,6 +324,46 @@ if (nrcommunities == 1791)
   printf("[ ");
   {
     int i;
+
+
+/*
+    for (i=0;i<nrcommunities;i++)
+    {
+      Rgb_t<double> rgb;
+      rgb.r = communityColors[i].r;
+      rgb.g = communityColors[i].g;
+      rgb.b = communityColors[i].b;
+
+fprintf(stderr,"%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
+
+      int j;
+      for (j=0;j<1;j++)
+      {
+        Rgb_t<double> rgb2;
+        rgb2.r = random_r()*255.0*0.01+0.99*255;
+        rgb2.g = random_r()*255.0*0.01+0.99*255;
+        rgb2.b = random_r()*255.0*0.01+0.99*255;
+ 
+        rgb = multiply(rgb,rgb2);
+
+      }
+fprintf(stderr,"\t%f, %f, %f\n",rgb.r, rgb.g, rgb.b); 
+      communityColors[i].r = (int)rgb.r;
+      communityColors[i].g = (int)rgb.g;
+      communityColors[i].b = (int)rgb.b;
+
+fprintf(stderr,"\t\t%d, %d, %d\n",communityColors[i].r, communityColors[i].g, communityColors[i].b); 
+
+    }
+
+    for (i=0;i<nrcommunities;i++)
+    {
+      communityColors[i].r = 255*random_r();
+      communityColors[i].g = 255*random_r();
+      communityColors[i].b = 255*random_r();
+    }
+*/
+
     for (i=0;i<nrcommunities;i++)
     {
       if (i)
