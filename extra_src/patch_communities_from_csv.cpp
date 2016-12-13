@@ -177,11 +177,10 @@ disciplinecounters[discipline]++;
     //Computer Science
     return Rgb(44,101,183);
 
-/*
-  case :
+  case 10:
     //Multidisciplinary
     return Rgb(96,111,102);
-*/
+
 //  case :
   default:
     //Other
