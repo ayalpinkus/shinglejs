@@ -1,6 +1,7 @@
 var shingle = shingle || (function () {
 
-	var graph = function (settings) {
+	var instances = 0,
+		graph = function (settings, instance) {
 
 		// Begin editable parameters
 		var options = settings || {},
@@ -60,6 +61,7 @@ var shingle = shingle || (function () {
 			graphs = {},
 			nodeRadiusScale = 1.0 / 100.0,
 			nodeEdgeRadiusScale = 1 / 500.0,
+			baseScale = null,
 			fontScale = null,
 			minScale = 0.01,
 			maxScale = 0.5,
@@ -160,6 +162,14 @@ var shingle = shingle || (function () {
 			//if(!(rect.top || rect.right || rect.bottom || rect.left)) { }
 
 			return rect;
+		}
+
+		function getNodeId(quadid, nodeid, highlighted) {
+			var	id = 'i' + instance + '-' + quadid + "-node-" + nodeid;
+			if (highlighted) {
+				id += "highlighted";
+			}
+			return id;
 		}
 
 		// node color based on community id
@@ -938,7 +948,6 @@ var shingle = shingle || (function () {
 			boundingrect.setAttributeNS(null, "width", "" + (xmax - xmin));
 			boundingrect.setAttributeNS(null, "height", "" + (ymax - ymin));
 			boundingrect.setAttributeNS(null, "class", options.boundingRectElClass);
-
 			boundingrect.style.fill = "none";
 			/*
 			rect.style.stroke = "black";
@@ -983,12 +992,9 @@ var shingle = shingle || (function () {
 			}
 		}
 
-		function calcCurrentFontScale() {
+		function calcBaseScale(){
 
-			//
-			// calculate fontsize of text element to display as specified fontSize in px on screen
-			if(!fontScale) {
-
+			if(!baseScale) {
 				var	ymin = mapinfo["quadtree"]["ymin"],
 					ymax = mapinfo["quadtree"]["ymax"],
 					rect = getMapRect(),
@@ -996,7 +1002,17 @@ var shingle = shingle || (function () {
 					svgHeight = rect.bottom - rect.top,
 					svgHeightFactor = svgHeight / graphHeight;
 
-				fontScale = (options.fontSize / ( startScale * svgHeightFactor ));
+				baseScale = (1 / ( startScale * svgHeightFactor ));
+			}
+		}
+
+		function calcCurrentFontScale() {
+
+			//
+			// calculate fontsize of text element to display as specified fontSize in px on screen
+			calcBaseScale();
+			if(!fontScale) {
+				fontScale = options.fontSize * baseScale;
 			}
 			if(options.textGrow) {
 				if(options.textShrink) {
@@ -1020,7 +1036,7 @@ var shingle = shingle || (function () {
 
 			if (quadLevels) {
 
-/*
+			/*
 				var	ymin = mapinfo["quadtree"]["ymin"],
 					ymax = mapinfo["quadtree"]["ymax"],
 					rect = getMapRect(),
@@ -1029,12 +1045,8 @@ var shingle = shingle || (function () {
 					svgHeightFactor = svgHeight / graphHeight;
 
 				return (1.0 / ( startScale * svgHeightFactor ));
-*/
-
-
-
+			*/
 				return ( 18.0 / (currentScale) );
-
 			}
 
 			return 1;
@@ -1189,7 +1201,7 @@ var shingle = shingle || (function () {
 				var nredges = graph["relations"].length;
 
 
-//				if (nredges > 100) nredges = 100;
+				//if (nredges > 100) nredges = 100;
 
 				var glin = document.getElementById(this.quadid);
 				if (glin == null) {
@@ -1266,13 +1278,11 @@ var shingle = shingle || (function () {
 			var nEdgeWid = 0;
 			var opacity;
 
-			var id;
+			var id = getNodeId(quadid, node.nodeid, highlighted);
 			if (highlighted) {
 				nodeRadius *= 1.5;
-				id = quadid + "-node-" + node.nodeid + "highlighted";
 				opacity = 1;
 			} else {
-				id = quadid + "-node-" + node.nodeid;
 				opacity = 0.6;
 			}
 			var color;
@@ -1379,7 +1389,7 @@ var shingle = shingle || (function () {
 
 				rect.style.fill = "none";
 				rect.style.stroke = "black";
-//rect.style.strokeWidth = 2*edgeWidthScale;
+				//rect.style.strokeWidth = 2*edgeWidthScale;
 				rect.style.fillOpacity = "0";
 				rect.style.strokeOpacity = "1";
 				glin.appendChild(rect);
@@ -1524,15 +1534,18 @@ var shingle = shingle || (function () {
 
 					var range = nodeRange(node),
 						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
+						nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale(),
 						circle = document.getElementById(this.currentHighlightedId);
 
 					if (circle) {
+						circle.setAttributeNS(null, "r", nodeRadius);
 						circle.setAttributeNS(null, "stroke-width", "0");
 					}
 
 					circle = document.getElementById(this.currentHighlightedIdHighlighted);
 					
 					if (circle) {
+						circle.setAttributeNS(null, "r", nodeRadius * 1.5);
 						circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
 					}
 				}
@@ -1551,11 +1564,14 @@ var shingle = shingle || (function () {
 					return;
 				}
 
-				this.currentHighlightedId = this.currentHighlightedQuadId + "-node-" + graph["nodes"][this.currentHighlightedIndex].nodeid;
+				this.currentHighlightedId = getNodeId(this.currentHighlightedQuadId, graph["nodes"][this.currentHighlightedIndex].nodeid, false);
 				this.currentHighlightedIdHighlighted = this.currentHighlightedId + "highlighted";
 			};
 
 			this.highlight = function () {
+
+				calcBaseScale();
+
 				if (this.currentHighlightedId != null) {
 					var graph = graphs[this.currentHighlightedQuadId];
 					if (graph == null) {
@@ -1569,14 +1585,17 @@ var shingle = shingle || (function () {
 
 					var range = nodeRange(node),
 						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
+						nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale() * 1.5,
 						circle = document.getElementById(this.currentHighlightedId);
 
 					if (circle) {
+						circle.setAttribute("r", nodeRadius);
 						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
 					}
 
 					circle = document.getElementById(this.currentHighlightedIdHighlighted);
 					if (circle) {
+						circle.setAttribute("r", nodeRadius * 1.5);
 						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
 					}
 				}
@@ -2022,7 +2041,7 @@ var shingle = shingle || (function () {
 		};
 
 	}, newGraph = function (settings) {
-		return new graph(settings);
+		return new graph(settings, instances++);
 	}
 
 	return {
