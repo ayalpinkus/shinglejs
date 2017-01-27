@@ -55,6 +55,37 @@ MFRNode* MFRNodeArray::LookUp(const char* nodeid)
                      nodeCompare);
 }
 
+void MFRNodeArray::CleanNames()
+{
+  int i;
+  for (i=0;i<nrnodes;i++)
+  {
+    char* ptr;
+
+int debug=0;
+if ( (ptr = strpbrk(nodes[i].namep, "\\\"%%")) != NULL)
+{
+  debug=1;
+}
+if (debug)
+{
+  fprintf(stderr,"Name to be cleaned: \"%s\"\n", nodes[i].namep);fflush(stderr);
+}
+
+    while ( (ptr = strpbrk(nodes[i].namep, "\\\"%%")) != NULL)
+    {
+      *ptr = ' ';
+    }
+
+if (debug)
+{
+  fprintf(stderr,"\tcleaned to: \"%s\"\n", nodes[i].namep);fflush(stderr);
+}
+
+
+  }
+}
+
 
 void MFRNodeArray::debug_show_if_sorted(int nr)
 {

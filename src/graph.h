@@ -96,6 +96,7 @@ public:
   ~MFRNodeArray();
   void Sort();
   MFRNode* LookUp(const char* nodeid);
+  void CleanNames();
 
   void debug_show_if_sorted(int nr);
 

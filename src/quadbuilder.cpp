@@ -368,6 +368,11 @@ int main(int argc, char** argv)
   MFRNodeArray nodes(node_in_fname);
   MFREdgeArray edges(edge_in_fname, nodes);
 
+  fprintf(stderr,"Cleaning names (should perhaps be done earlier?)\n");fflush(stderr);
+  nodes.CleanNames();
+  fprintf(stderr,"Finished cleaning names\n");fflush(stderr);
+
+
 //  nodes.debug_show_if_sorted(12);
   
   MFRQuadTree quadTree(nodes, quadLevels);

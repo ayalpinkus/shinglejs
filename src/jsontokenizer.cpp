@@ -125,12 +125,18 @@ void JSONTokenizer::LookAhead()
   {
     //@@@TODO Optimize
     nextToken[0] = 0;
+    char *walkptr = nextToken;
+
     while (strchr(tokenLetters, nextChar))
     {
+      *walkptr++ = ((char)nextChar);
+/*
       nextToken[strlen(nextToken)+1] = 0;
       nextToken[strlen(nextToken)  ] = ((char)nextChar);
+*/
       getNextChar();
     }
+    *walkptr++ = 0;
     return;
   }
   else if (nextChar == '\"')
@@ -138,6 +144,9 @@ void JSONTokenizer::LookAhead()
     int startLine = line;
     //@@@TODO Optimize
     nextToken[0] = 0;
+  
+    char *walkptr = nextToken;
+
     getNextChar();
     while (nextChar != '\"')
     {
@@ -150,10 +159,15 @@ void JSONTokenizer::LookAhead()
       {
         getNextChar();
       }
+      *walkptr++ = ((char)nextChar);
+
+/*
       nextToken[strlen(nextToken)+1] = 0;
       nextToken[strlen(nextToken)  ] = ((char)nextChar);
+*/
       getNextChar();
     }
+    *walkptr++ = 0;
     getNextChar();
     return;
   }
