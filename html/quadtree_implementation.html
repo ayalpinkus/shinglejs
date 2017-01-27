@@ -1,0 +1,54 @@
+<html>
+  <head>
+    <link href="https://fonts.googleapis.com/css?family=Lora|Source+Sans+Pro|Source+Code+Pro" rel="stylesheet"> 
+    <link rel="stylesheet" href="shinglesite.css">
+    <link rel="stylesheet" href="shingle.css">
+    <link rel="stylesheet" href="shingleInfoPanel.css">
+    <script src="shingle.js" type="text/javascript"></script>
+    <script src="shingleInfoPanel.js" type="text/javascript"></script>
+  </head>
+  <body>
+    <div class = "pane title">
+      <center>
+        <h1>shingle.js</h1>
+        <h2>Quad tree implementation</h2>
+      </center>
+    </div>
+
+    <center>
+      <div class = "pane card" >
+
+        <div class="intro">
+<h3>Algorithm for building the quad tree</h3>
+shingle.js takes as input an undirected graph with nodes that have an (x,y) position and a size. From that it builds a "quad tree". This approach has some similarities to a binary search, but in two dimensions and some other small alterations.
+
+<ul>
+  <li>For the set of points from the graph, first find the biggest 50 nodes. Store those with the root node of the tree. Then figure out if the bounding rectangle is wider than it is high, or the other way around, and based on that, determine whether to split the bounding rectangle at a specific point on the x axis, or at a point on the y axis. Then sort all the points according to either the x or the y coordinate, and find the median point (the point right in the middle) so that there are as many points to the left as there are to the right. Determine the bounding rectangle for the points inside the entire set under consideration.</li>
+<li>Store the split coordinate in the quad node, and take the points to the one side of that split, and the points to the other side of that split, and recursively build a root quad node for those sets, and assign these left and right leaves as child nodes to the original root node of the quad tree.</li>
+<li>Stop when the node is sufficiently small, eg. when there are 50 nodes or less to be split.</li>
+</ul>
+
+The end result is that the entire graph is split up into tiles, each with 50 nodes at most. To limit the number of edges stored with each quad, so quads don't become too big, a limit of 25 edges per node has been placed.
+
+<h3>Using the quad tree</h3>
+The Javascript library shingle.js is capable of loading the entiry quad tree, which is stored in mapinfo.json. For a container in which it wants to render a part of the graph, it will traverse the quad tree, at each node:
+
+<ul>
+<li>if the screen rect does not intersect with the quad rect, then terminate</li>
+<li>If the quad rectangle is below a specific size on screen, then terminate.</li>
+<li>Fetch the actual quad data (the actual nodes and edges. These are stored in a separate json file, to be fetched from the server.</li>
+<li>Draw all the nodes for this quad.</li>
+<li>Repeat the same process for the left and right node.</li>
+</ul>
+
+Through this method, only points and edges are fetched if they can be seen on screen, so that limits the amount of data the code has to fetch from the server and draw. At the same time, when zoomed out, the amount of quads loaded is capped, they are not drawn when they are relatively small to the screen. Combined with the fact that the amount of edges in each quad is capped, the code can efficiently load and render a limited amount of data, the data relevant because it can be seen on screen. 
+<p>
+The shingle.js library works by dynamically adding and removing elements from the DOM of an SVG element, adding them when they come into view, removing them when they disappear from view, so the svg stays light and efficiently draggable.
+<p>
+The code makes good use of the asynchronous event-based model of Javascript. It has a little scheduler that passes execution to functions that will perform a part of a function, and then yield back again to the system. The map is thus rendered in small slices so as to not take too much time. Otherwise, the browser would freeze, or at least feel unresponsive to user input. Some of the actions are also performed asynchronously after the data is loaded from the server. This to reduce the impact to the responsiveness of the browser to a minimum.
+
+        </div>
+      </div>
+    </center>
+  </body>
+</html>
