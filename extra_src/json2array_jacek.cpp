@@ -146,6 +146,17 @@ static void processFile(const char* fname)
     }
     tokenizer.Match("}");
     fwrite(&node,sizeof(MFRNode),1,node_out_file);
+
+{
+  static int nodecount=0;
+  if ((nodecount & 1023) == 0)
+  {
+    fprintf(stderr,"\rNode %d",nodecount);
+  }
+  nodecount++;
+}
+
+
     if (!strcmp(tokenizer.nextToken, ","))
     {
       tokenizer.Match(",");
@@ -181,6 +192,16 @@ static void processFile(const char* fname)
     {
       edgeids.insert(thisedge);
       fwrite(&edge,sizeof(MFREdgeExt),1,edge_out_file);
+
+{
+  static int edgecount=0;
+  if ((edgecount & 1023) == 0)
+  {
+    fprintf(stderr, "\rEdge %d",edgecount);
+  }
+  edgecount++;
+}
+
     }
   }
 
