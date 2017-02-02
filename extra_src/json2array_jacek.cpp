@@ -224,14 +224,18 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
   while (!strcmp(tokenizer.nextToken, "{"))
   {
     char nodeid[256];
-    int hindex;
-    int asjc;
+    int hindex=0;
+    int asjc=0;
     tokenizer.Match("{");
 
     while (strcmp(tokenizer.nextToken, "}"))
     {
       if (!strcasecmp(tokenizer.nextToken, "eid"))
       {
+
+        hindex=0;
+        asjc=10;
+
         tokenizer.LookAhead();
         tokenizer.Match(":");
         strcpy(nodeid,tokenizer.nextToken);
@@ -246,7 +250,16 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
       {
         tokenizer.LookAhead();
         tokenizer.Match(":");
-        asjc = atoi(tokenizer.nextToken);
+	
+	char* ptr = tokenizer.nextToken;
+	int len = strlen(ptr);
+	 
+	if (len>2 && *ptr == '\"')
+	{
+	  ptr[len-1] = 0;
+	  ptr = ptr + 1;
+	}
+        asjc = atoi(ptr);
       }
       else
       {
