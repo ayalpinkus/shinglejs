@@ -225,6 +225,7 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
   {
     char nodeid[256];
     int hindex;
+    int asjc;
     tokenizer.Match("{");
 
     while (strcmp(tokenizer.nextToken, "}"))
@@ -240,6 +241,12 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
         tokenizer.LookAhead();
         tokenizer.Match(":");
         hindex = atoi(tokenizer.nextToken);
+      }
+      else if (!strcasecmp(tokenizer.nextToken, "asjc"))
+      {
+        tokenizer.LookAhead();
+        tokenizer.Match(":");
+        asjc = atoi(tokenizer.nextToken);
       }
       else
       {
@@ -263,7 +270,13 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
     }
     else
     {
+      // I don't want to have to handle -1 in shingle.js. asjc 1000 is "general"
+      if (asjc<0)
+      {
+        asjc = 10;
+      }
       node->size = hindex;
+      node->community = asjc;
     }
 
     if (!strcmp(tokenizer.nextToken, ","))
@@ -271,9 +284,6 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
       tokenizer.Match(",");
     }
   }
-
-
-
 
   tokenizer.Match("]");
   tokenizer.Match("}");
