@@ -105,13 +105,17 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
 
   fprintf(json_out_file,"  \"referenced\": [\n");
 
+
+  int ecount = 0;
+  LinkedEdges* edgelist = NULL;
+
+#define noEXPORT_REFERENCED_QUADS
+#ifdef EXPORT_REFERENCED_QUADS
+
   std::set<std::string> quadsreferenced;
   first = 1;
 
-
-  int ecount = 0;
-
-  LinkedEdges* edgelist = root->edges;
+  edgelist = root->edges;
   while (edgelist)
   {
     MFRNode *nodeA = edgelist->edge->nodeA;
@@ -156,6 +160,9 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
     }
 */
   }
+
+#endif // EXPORT_REFERENCED_QUADS
+
 
   fprintf(json_out_file,"  ],\n");
 
