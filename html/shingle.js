@@ -22,6 +22,7 @@ var shingle = shingle || (function () {
 				staticMap: false,
 				zoomSlider: true,
 				zoomStep: 5,
+				dragTimeThreshold: 100,
 				scrollZoomInitDelay: 400,
 				scrollZoom: true,
 				showRelatedNodeNames: false,
@@ -41,11 +42,15 @@ var shingle = shingle || (function () {
 				nodeTextClass: 'shingle-node-text',
 				highlightedNodeTextClass: 'shingle-node-h-text',
 				mapClass: 'shingle-map',
+				quadClass: 'shingle-quad',
+				debugQuadClass: 'shingle-debug-quad',
+				debugNodeClass: 'shingle-debug-node',
 				nodeColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
 				defaultNodeColor: [214, 29, 79],
 				edgeColor: [213, 213, 213],
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
+				quadDebugColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
 				nodeRadiusScaleFactor: 1/50.0 ,
 				nodeRadiusScalePower: 1.25 ,
 				fontFamily: "sans",
@@ -58,7 +63,9 @@ var shingle = shingle || (function () {
 				lineType: "EllipticalArc",
 				hoverDelay: 100,
 				debug: false,
-				debugQuads: false
+				debugQuads: false,
+				calcBoundingRectDimsMethodExperimental: false,
+				useMultipleQuadsLoader: true
 			};
 
 		// global private vars
@@ -80,9 +87,10 @@ var shingle = shingle || (function () {
 			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
 			linescontainer, nodescontainer,
 			scalingEl, translationEl,
-			lastX = 0, lastY = 0,
 			startTranslateX = 0, startTranslateY = 0,
 			dragging = false,
+			dragCoordinates = { x: 0, y: 0 },
+			lastX = 0, lastY = 0,
 			svgCreated = false,
 			sfactor = 48,
 			KSymTableSize = 211,
@@ -102,8 +110,7 @@ var shingle = shingle || (function () {
 			mapRect = false, boundingrectDims = false,
 			useGraphCSS = !(navigator.userAgent.toLowerCase().indexOf('firefox') > -1),
 			zoomStep = 0, zoomSteps = [], zoomStepsNodeScales = [], stepScale, currentScaleStep = false, startScaleStep = false, sliderZoomStep,
-			textRects = [];
-
+			textRects = [], svgDims = false;
 
 		// defaults
 		function initDefaults() {
@@ -219,6 +226,41 @@ var shingle = shingle || (function () {
 			}
 	    })();
 
+		// timer class
+		var Timer = function() {
+
+			var millis = performance.now ? function() { return performance.now(); } : function() {
+				return new Date().getTime();
+			}, timeStats = {
+				tStart: 0,
+				tEnd: 0
+			};
+
+			function reset() {
+				timeStats.tStart = 0;
+				timeStats.tEnd = 0;
+			};
+
+			function start() {
+				reset();
+				timeStats.tStart = millis();
+			};
+
+			function end() {
+				timeStats.tEnd = millis();
+			};
+
+			function elapsed() {
+				return timeStats.tEnd - timeStats.tStart;
+			};
+
+			return {
+				start: start,
+				end: end,
+				elapsed: elapsed
+			}
+		}, dragTimer = new Timer();
+
 		function ajaxGet(url, callback) {
 			var xmlhttp = new XMLHttpRequest();
 			xmlhttp.overrideMimeType("application/json");
@@ -233,6 +275,72 @@ var shingle = shingle || (function () {
 			xmlhttp.send();
 		}
 
+		// module for loading quads
+		var quadsLoader = function() {
+
+			var gReqQ = [], timer = false;
+
+			function load(reqQ) {
+				var quadPars = '';
+
+				if(reqQ.length > 1) {
+
+					var callbacks = {};
+					for (var i = 0; i < reqQ.length; i++) {
+
+						var req = reqQ[i], fileName = req.quadid + ".json";
+						if(i > 0) quadPars += ',';
+						quadPars += fileName;
+						callbacks[fileName] = req.callback;
+					};
+
+					var json_url = options.graphPath + quadPars;
+					ajaxGet(json_url, function(responses) {
+
+						var quadsArr = JSON.parse(responses);
+						for (var i = 0; i < quadsArr.length; i++) {
+							var response = quadsArr[i];
+							response.fileName && callbacks[response.fileName] && callbacks[response.fileName](response.data);
+						};
+					});
+
+				} else if(reqQ.length) {
+
+					var json_url = options.graphPath + reqQ[0].quadid + ".json",
+						callback = reqQ[0].callback;
+
+					ajaxGet(json_url, function(response) {
+						callback(JSON.parse(response));
+					});
+				}
+			}
+
+			function exec(i) {
+				clearTimeout(timer);
+				if(gReqQ.length > 5 || i > 5) {
+					load(gReqQ.slice());
+					gReqQ = [];
+				} else {
+					timer = setTimeout(function() {
+						var n = (i || 0) + 1;
+						exec(n);
+					}, 50);
+				}
+			}
+
+			function request(quadid, callback) {
+				gReqQ.push({
+					quadid: quadid,
+					callback: callback
+				});
+				exec();
+			}
+
+			return {
+				request: request
+			}
+		}();
+
 		function rgbA(colorTuple) {
 			var r = colorTuple[0];
 			var g = colorTuple[1];
@@ -241,9 +349,59 @@ var shingle = shingle || (function () {
 			return "rgba(" + r + "," + g + "," + b + "," + a + ")";
 		}
 
-		function setBoundingrectDims() {
+		function calcBoundingRectDims() {
+
+			// get scale 1
+			var rect = {
+				top: svgDims.scaleOneRect.top,
+				right: svgDims.scaleOneRect.right,
+				bottom: svgDims.scaleOneRect.bottom,
+				left: svgDims.scaleOneRect.left
+			};
+
+			rect.width = svgDims.width;
+			rect.height = svgDims.height;
+
+			// apply current scale
+			if(currentScale > 1) {
+				rect.width = svgDims.width * currentScale;
+				rect.height = svgDims.height * currentScale;
+
+				var dWidth = rect.width - svgDims.width,
+					dHeight = rect.height - svgDims.height;
+
+				rect.top -= (dHeight / 2);
+				rect.right += (dWidth / 2);
+				rect.bottom += (dHeight / 2);
+				rect.left -= (dWidth / 2);
+			}
+
+			// apply translates
+			if(currentTranslateX) {
+				var tWidth = currentTranslateX * svgDims.factor * currentScale;
+				rect.left += tWidth;
+				rect.right += tWidth;
+			}
+			if(currentTranslateY) {
+				var tHeight = currentTranslateY * svgDims.factor * currentScale;
+				rect.top += tHeight;
+				rect.bottom += tHeight;
+			}
+
+			return rect;
+		}
+
+		function setBoundingrectDimsDefault() {
+			getSvgDims();
 			boundingrectDims = boundingrect.getBoundingClientRect();
 		}
+
+		function setBoundingrectDimsExperimental() {
+			getSvgDims();
+			boundingrectDims = calcBoundingRectDims();
+		}
+
+		function setBoundingrectDims() {};
 
 		function getBoundingrectDims() {
 			!boundingrectDims && setBoundingrectDims();
@@ -251,6 +409,7 @@ var shingle = shingle || (function () {
 		}
 
 		function setMapRect() {
+
 			mapRect = mfrmap.getBoundingClientRect();
 		}
 
@@ -444,7 +603,6 @@ var shingle = shingle || (function () {
 
 		function findQuadsNodeJs(screenrect) {
 
-			//var url = 'http://localhost:8081/shinglejs-local/data/auth25_01_tiled/datasets/elsevier-data/findQuads' +
 			var url = options.graphPath + 'findQuads' +
 					'?xmin=' + screenrect[0] +
 					'&ymin=' + screenrect[1] +
@@ -515,7 +673,7 @@ var shingle = shingle || (function () {
 
 			var i;
 			var screenrect = containerWorldRect(),
-				elements = svg.getElementsByClassName('quadcontainer');
+				elements = svg.getElementsByClassName(options.quadClass);
 
 			for (var i = 0; i < elements.length; i++) {
 				var el = elements[i],
@@ -570,15 +728,15 @@ var shingle = shingle || (function () {
 					else if (shouldQuadBeVisible(screenrect, header)) {
 						visible = true;
 					} else {
-
+						/*
 						var referenced = graph["referenced"];
 						var j;
+
 						for (j = 0; j < referenced.length; j++) {
 							var othergraph = graphs[referenced[j]];
 							if (othergraph == null) {
 								continue;
 							}
-
 							header = othergraph.header;
 
 							if (shouldQuadBeVisible(screenrect, header)) {
@@ -586,6 +744,7 @@ var shingle = shingle || (function () {
 								break;
 							}
 						}
+						*/
 					}
 					if (visible == false) {
 						//
@@ -683,6 +842,25 @@ var shingle = shingle || (function () {
 				stepScale *= 1.1;
 				zoomStep++;
 			}
+			// debug quad hover visual indicators
+			if(useGraphCSS && options.debugQuads) {
+				graphCSS.set('.' + options.debugQuadClass + '-text', {
+					'fill-opacity': '0.78'
+				});
+				graphCSS.set('.' + options.debugQuadClass + ' .' + options.debugQuadClass + '-text', {
+					'fill-opacity': '1'
+				});
+				graphCSS.set('.' + options.debugQuadClass + ' circle', {
+					'stroke-width': '3px',
+					fill: '#fff',
+					stroke: 'rgb(96,111,102)'
+				});
+				graphCSS.set('.' + options.debugQuadClass + ' path', {
+					'stroke-width': '2px',
+					'stroke-opacity': '1',
+					stroke: 'rgb(96,111,102)!important'
+				});
+			}
 
 			// init current values
 			currentScale = startScale;
@@ -716,6 +894,9 @@ var shingle = shingle || (function () {
 					findQuadsToDrawRecursive = findQuadsWithLevelsToDrawRecursive;
 					shouldQuadBeVisible = quadIntersectsAndQuadBigEnough;
 				}
+				if(mapinfo.supportsMultipleQuadsLoader && options.useMultipleQuadsLoader) {
+					getQuad = getQuadWithLoader;
+				}
 				
 				if(nodeid) {
 					findPosition(nodeid)
@@ -725,6 +906,21 @@ var shingle = shingle || (function () {
 			});
 		}
 
+		function getQuadWithLoader(quadid, callback) {
+			quadsLoader.request(quadid, callback);
+		} 
+
+		function getQuadSingle(quadid, callback) {
+
+			var json_url = options.graphPath + quadid + ".json";
+
+			ajaxGet(json_url, function(response) {
+				callback(JSON.parse(response));
+			});
+		}
+
+		var getQuad = getQuadSingle;
+
 		function loadQuad(quadid) {
 			if (graphs[quadid] != null) {
 				if (!drawnQuad(quadid)) {
@@ -733,17 +929,9 @@ var shingle = shingle || (function () {
 				return;
 			}
 
-			var json_url = options.graphPath + quadid + ".json";
-
-			if (quadsWithHighlightedNodes.hasOwnProperty(quadid)) {
-				json_url = options.graphPath + "e" + quadid + ".json";
-			}
-
-			ajaxGet(json_url, function(response) {
-				
-				var graph = JSON.parse(response);
-
+			getQuad((quadsWithHighlightedNodes.hasOwnProperty(quadid) ? 'e' : '') + quadid, function(graph) {
 				if (graphs[quadid] == null) {
+					graph.shingleIndex = Object.keys(graphs).length - 1;
 					graphs[quadid] = graph;
 					scheduler.addTask(new ScheduledAppendQuad(quadid));
 				}
@@ -763,10 +951,8 @@ var shingle = shingle || (function () {
 			}
 
 			if (doload) {
-				var json_url = options.graphPath + "e" + quadid + ".json";
-				ajaxGet(json_url, function(response) {
 
-					var graph = JSON.parse(response);
+				getQuad("e" + quadid, function(graph) {
 
 					if (loadReferenced) {
 						keepHighlightedNodesLoaded(graph);
@@ -776,7 +962,7 @@ var shingle = shingle || (function () {
 
 						if (graphs[quadid]["header"]["compact"] == true) {
 							var i;
-							var elements = svg.getElementsByClassName('quadcontainer');
+							var elements = svg.getElementsByClassName(options.quadClass);
 							for (var i = 0; i < elements.length; i++) {
 								var el = elements[i];
 								var elid = el.id;
@@ -803,6 +989,7 @@ var shingle = shingle || (function () {
 						}
 					}
 
+					graph.shingleIndex = Object.keys(graphs).length - 1;
 					graphs[quadid] = graph;
 
 					scheduler.addTask(new ScheduledAppendQuad(quadid));
@@ -818,6 +1005,9 @@ var shingle = shingle || (function () {
 
 
 		function loadReferencedQuads(graph) {
+
+			if(!graph["relations"]) return;
+
 			var extendedQuadsToLoad = {},
 				nredges = graph["relations"].length, k;
 
@@ -852,19 +1042,21 @@ var shingle = shingle || (function () {
 		}
 
 		function keepHighlightedNodesLoaded(graph) {
-			quadsWithHighlightedNodes = {};
-			var nredges = graph["relations"].length;
-			var k;
-			for (k = 0; k < nredges; k++) {
-				var nodeidA = graph["relations"][k].nodeidA;
-				var quadA = graph["relations"][k].quadA;
-				var nodeidB = graph["relations"][k].nodeidB;
-				var quadB = graph["relations"][k].quadB;
+			if(graph["relations"]) {
+				quadsWithHighlightedNodes = {};
+				var nredges = graph["relations"].length;
+				var k;
+				for (k = 0; k < nredges; k++) {
+					var nodeidA = graph["relations"][k].nodeidA;
+					var quadA = graph["relations"][k].quadA;
+					var nodeidB = graph["relations"][k].nodeidB;
+					var quadB = graph["relations"][k].quadB;
 
-				if (nodeidA == currentnodeid || nodeidB == currentnodeid) 
-				{
-					quadsWithHighlightedNodes[quadA] = 1;
-					quadsWithHighlightedNodes[quadB] = 1;
+					if (nodeidA == currentnodeid || nodeidB == currentnodeid) 
+					{
+						quadsWithHighlightedNodes[quadA] = 1;
+						quadsWithHighlightedNodes[quadB] = 1;
+					}
 				}
 			}
 		}
@@ -881,8 +1073,11 @@ var shingle = shingle || (function () {
 
 		function handleMouseDown(evt) {
 
-			lastX = (evt.pageX - mfrmap.offsetLeft);
-			lastY = (evt.pageY - mfrmap.offsetTop);
+			dragTimer.start();
+
+			dragCoordinates.x = evt.pageX;
+			dragCoordinates.y = evt.pageY;
+
 			startTranslateX = currentTranslateX;
 			startTranslateY = currentTranslateY;
 
@@ -894,12 +1089,11 @@ var shingle = shingle || (function () {
 
 		function handleMouseMove(evt) {
 			if (dragging) {
+				var deltaX = evt.pageX - dragCoordinates.x,
+					deltaY = evt.pageY - dragCoordinates.y;
 
-				var newX = (evt.pageX - mfrmap.offsetLeft),
-					newY = (evt.pageY - mfrmap.offsetTop);
-
-				currentTranslateX = startTranslateX + (newX - lastX) / sfactor;
-				currentTranslateY = startTranslateY + (newY - lastY) / sfactor;
+				currentTranslateX = startTranslateX + deltaX / sfactor;
+				currentTranslateY = startTranslateY + deltaY / sfactor;
 
 				//@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
 				debugLog("<p style=\"color:#ffffff\">" + 0 + "</p>");
@@ -917,33 +1111,43 @@ var shingle = shingle || (function () {
 
 		function handleMouseUp(evt) {
 
+			dragTimer.end();
+
+			var deltaX = evt.pageX - dragCoordinates.x,
+				deltaY = evt.pageY - dragCoordinates.y;
+
 			dragging = false;
 
-			setBoundingrectDims();
+			// an actual pan
+			if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+				setBoundingrectDims();
 
-			findQuadsToDraw();
-			findQuadsToRemove();
+				findQuadsToDraw();
+				findQuadsToRemove();
 
-			if (highlightednamescontainer != null) {
-				highlightednamescontainer.style.display = "inherit";
+				if (highlightednamescontainer != null) {
+					highlightednamescontainer.style.display = "inherit";
+				}
 			}
 
-			var newX = (evt.pageX - mfrmap.offsetLeft),
-				newY = (evt.pageY - mfrmap.offsetTop);
-			if (Math.abs(newX - lastX) < 10 && Math.abs(newY - lastY) < 10) {
-				removeInfoAbout();
-
-				if(options.containerWithFocusClass) {
-					options.el.classList.remove(options.containerWithFocusClass);
+			// NOTE this might need some refactoring, as this is also intended
+			// to prevent a clicked on node (different event) from getting unhighlighted
+			if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
+				// no panning, a click outside a node
+				// use a threshold in milliseconds to make sure this is
+				// is an intended click
+				if(dragTimer.elapsed() > options.dragTimeThreshold) {
+					removeInfoAbout();
+					if(options.containerWithFocusClass) {
+						options.el.classList.remove(options.containerWithFocusClass);
+					}
+					options.onBlur && options.onBlur();
+					syncInfoDisplay(false);
 				}
-				options.onBlur && options.onBlur();
-				syncInfoDisplay(false);
 			}
 		}
 
 		function attachMouseEvents() {
-
-			var	inScroll = false;
 
 			if (mfrmap) {
 
@@ -984,31 +1188,18 @@ var shingle = shingle || (function () {
 
 					var handleScroll = function (evt) {
 
-						if (inScroll)
-							return;
-
 						var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
 
 						if (delta) {
 							doZoom((delta > 0) ? -1 : 1);
 						}
+
 						return evt.preventDefault() && false;
-					};
-
-					function detectScrollAttrs(e) {
-
-						if (e.target.tagName !== 'svg') {
-							inScroll = setTimeout(function () {
-								clearInterval(inScroll);
-								inScroll = false;
-							}, options.scrollZoomInitDelay);
-						}
 					};
 				}
 
 				if (options.scrollZoom) {
 					var wheelEvent = "onwheel" in mfrmap ? "wheel" : document.onmousewheel !== undefined ? "mousewheel" : "DOMMouseScroll";
-					document.addEventListener(wheelEvent, detectScrollAttrs, false);
 					mfrmap.addEventListener(wheelEvent, handleScroll, false);
 				}
 			}
@@ -1028,9 +1219,10 @@ var shingle = shingle || (function () {
 			options.el.style.width = options.width;
 			options.el.classList.add(options.containerClass);
 			mfrmap.style.width = options.width;
+			mfrmap.style.height = options.height;
 
-			svg.setAttributeNS(null, "width", options.width);
-			svg.setAttributeNS(null, "height", options.height);
+			svg.setAttributeNS(null, "width", "100%");
+			svg.setAttributeNS(null, "height", "100%");
 
 			svg.setAttributeNS(null, "position", "absolute");
 			svg.setAttributeNS(null, "x", "0");
@@ -1046,8 +1238,8 @@ var shingle = shingle || (function () {
 			translationEl = document.createElementNS(xmlns, "g");
 			scalingEl.appendChild(translationEl);
 
-			if(options.translateOffsetX) currentTranslateX += options.translateOffsetX / sfactor / 2;
-			if(options.translateOffsetY) currentTranslateY += options.translateOffsetY / sfactor / 2;
+			if(options.translateOffsetX) currentTranslateX += options.translateOffsetX / currentScale;
+			if(options.translateOffsetY) currentTranslateY += options.translateOffsetY / currentScale;
 
 			translationEl.setAttributeNS(null, 'transform', "translate(" + currentTranslateX + " " + currentTranslateY + ")");
 			translationEl.setAttributeNS(null, "class", options.translationElClass);
@@ -1110,8 +1302,11 @@ var shingle = shingle || (function () {
 			}
 		}
 
-		function svgFactor() {
-			var	mRect = getMapRect();
+		function setSvgDims() {
+
+			svgDims = {};
+
+			var	mRect = svg.getBoundingClientRect(), rect = {};
 
 			var	ymin = mapinfo["quadtree"]["ymin"],
 				ymax = mapinfo["quadtree"]["ymax"],
@@ -1126,12 +1321,50 @@ var shingle = shingle || (function () {
 				svgWidthFactor = svgWidth / graphWidth;
 
 			// svg fits to box in as well width as height
-			return Math.min(svgHeightFactor, svgWidthFactor);
+			svgDims.factor = Math.min(svgHeightFactor, svgWidthFactor);
+			svgDims.heightFactor = svgHeightFactor;
+			svgDims.widthFactor = svgWidthFactor;
+			if(svgHeightFactor < svgWidthFactor) {
+				svgDims.base = 'height';
+				svgDims.height = svgHeight;
+				svgDims.width = graphWidth * svgDims.factor;
+			} else {
+				svgDims.base = 'width';
+				svgDims.width = svgWidth;
+				svgDims.height = graphHeight * svgDims.factor;
+			}
+
+			svgDims.wDelta = svgWidth - svgDims.width;
+			svgDims.hDelta = svgHeight - svgDims.height;
+
+			// calculate scale 1
+			if(svgHeightFactor < svgWidthFactor) {
+				rect.top = mRect.top;
+				rect.right = mRect.left + (svgDims.wDelta / 2) + svgDims.width;
+				rect.bottom = mRect.top + svgDims.height;
+				rect.left = mRect.left + (svgDims.wDelta / 2);
+			} else {
+				rect.top = mRect.top + (svgDims.hDelta / 2);
+				rect.right = mRect.left + svgDims.width;
+				rect.bottom = mRect.top + (svgDims.hDelta / 2) + svgDims.height;
+				rect.left = mRect.left;
+			}
+			svgDims.scaleOneRect = rect;
+		}
+
+		function getSvgFactor() {
+			!svgDims && setSvgDims();
+			return svgDims.factor;
+		}
+
+		function getSvgDims() {
+			!svgDims && setSvgDims();
+			return svgDims;
 		}
 
 		function calcBaseScale() {
 			if(!baseScale) {
-				baseScale = (1 / ( startScale * svgFactor() ));
+				baseScale = (1 / ( startScale * getSvgFactor() ));
 			}
 		}
 
@@ -1191,7 +1424,7 @@ var shingle = shingle || (function () {
 			if(!tRect.displayed) return false;
 
 			var collisionRect = false,
-				fSVG = svgFactor(),
+				fSVG = getSvgFactor(),
 				textRect = {
 					top: tRect.top * currentScale * fSVG,
 					right: tRect.right * currentScale * fSVG,
@@ -1225,7 +1458,7 @@ var shingle = shingle || (function () {
 			return collisionRect;
 		}
 
-		function getTextRect(textfield, node, onHoverOnly, fontSize, nodeOffSets, mainNode) {
+		function getTextRect(textfield, node, onHoverOnly, fontAttrs, nodeOffSets, mainNode) {
 
 			offSets = nodeOffSets || {
 				x: 1,
@@ -1245,7 +1478,21 @@ var shingle = shingle || (function () {
 			// to get text dimensions
 			var tN = document.createTextNode(node.name);
 			textfield.appendChild(tN);
-			var ttDims = textfield.getBBox();
+
+			var ttDims, fontSize;
+
+			if(typeof fontAttrs == 'object') {
+				// calculate new size from old and new
+				fontSize = fontAttrs.newSize;
+				ttDims = {
+					width: (fontAttrs.oldWidth / fontAttrs.oldSize) * fontAttrs.newSize,
+					height: (fontAttrs.oldHeight / fontAttrs.oldSize) * fontAttrs.newSize
+				}
+			} else {
+				// first time, get the bounding box
+				fontSize = fontAttrs;
+				ttDims = textfield.getBBox();
+			}
 
 			if(offSets.x < 0) {
 				offSets.xc = -1 * ttDims.width;
@@ -1281,7 +1528,7 @@ var shingle = shingle || (function () {
 			if(!textRect.mainNode && !textRect.onHoverOnly) {
 
 				// check if distance to main node is mimimum of 1.8 lineheight on display
-				if(textRect.offSets.d && (textRect.offSets.d * currentScale * svgFactor() < options.relatedNodesFontSize * 1.8)) {
+				if(textRect.offSets.d && (textRect.offSets.d * currentScale * getSvgFactor() < options.relatedNodesFontSize * 1.8)) {
 					textRect.displayed = false;
 				} else {
 					// check overlap
@@ -1352,17 +1599,26 @@ var shingle = shingle || (function () {
 				var textRect = textRects[i];
 
 				// change font to visually stay thesame size
-				textRect.field.setAttributeNS(null, "font-size", size * (textRect.mainNode ? 1 : relatedFactor));
+				var fontSize = {
+					newSize: size * (textRect.mainNode ? 1 : relatedFactor),
+					oldSize: textRect.fontSize,
+					oldWidth: textRect.right - textRect.left,
+					oldHeight: textRect.bottom - textRect.top 
+				};
 
-				// reposition when node has become smaller (reversed scaling)
-				textRect = getTextRect(textRect.field, textRect.node, textRect.onHoverOnly, textRect.fontSize, textRect.offSets, textRect.mainNode);
-				textRect.field.setAttributeNS(null, "x", textRect.left);
-				textRect.field.setAttributeNS(null, "y", textRect.top);
+				textRect.field.setAttributeNS(null, "font-size", fontSize.newSize);
 
-				textRects[i] = textRect;
+				// reposition, node has become smaller or larger (reversed scaling to scaling layer)
+				textRect = getTextRect(textRect.field, textRect.node, textRect.onHoverOnly, fontSize, textRect.offSets, textRect.mainNode);
+				if(!isNaN(textRect.left) && !isNaN(textRect.top)) {
+					textRect.field.setAttributeNS(null, "x", textRect.left);
+					textRect.field.setAttributeNS(null, "y", textRect.top);
+
+					textRects[i] = textRect;
+				}
 			};
 
-			// check collidions again, so if hidden ones can be displayed and vice versa
+			// check collisions again, so if hidden ones can be displayed and vice versa
 			for (var i = 0; i < textRects.length; i++) {
 				var textRect = textRects[i];
 
@@ -1398,18 +1654,8 @@ var shingle = shingle || (function () {
 					textfield.setAttributeNS(null, "font-size", size);
 					textfield.setAttributeNS(null, "data-nodeid", "");
 
-					// only on hover
-//					if(onHoverOnly) {
-//						textfield.style.display = 'none';
-//					}
-
 					highlightednamescontainer.appendChild(textfield);
 				}
-
-//				if (textfield.getAttribute('data-nodeid') == node.nodeid) {
-//					return;
-//				}
-
 
 				var x = node.x,
 					y = node.y,
@@ -1436,22 +1682,24 @@ var shingle = shingle || (function () {
 
 			this.call = function () {
 
-				appendSvgDOM(quadid);
+				if(graphs[quadid]) {
+					appendSvgDOM(quadid);
 
-				setTimeout(function() {
-					delete drawQ[quadid];
-					if(Object.keys(drawQ).length == 0) {
-						if(options.onQuadsDrawn) {
-							options.onQuadsDrawn();
-						}
-						if(!firstQuadDrawn) {
-							if(options.onFirstQuadDrawn) {
-								options.onFirstQuadDrawn();
+					setTimeout(function() {
+						delete drawQ[quadid];
+						if(Object.keys(drawQ).length == 0) {
+							if(options.onQuadsDrawn) {
+								options.onQuadsDrawn();
 							}
-							firstQuadDrawn = true;
+							if(!firstQuadDrawn) {
+								if(options.onFirstQuadDrawn) {
+									options.onFirstQuadDrawn();
+								}
+								firstQuadDrawn = true;
+							}
 						}
-					}
-				}, 400);
+					}, 400);
+				}
 
 				return true;
 			}
@@ -1513,8 +1761,8 @@ var shingle = shingle || (function () {
 				if (graph == null) {
 					return true;
 				}
-				var nredges = graph["relations"].length;
 
+				var nredges = graph["relations"].length;
 
 				//if (nredges > 100) nredges = 100;
 
@@ -1699,9 +1947,8 @@ var shingle = shingle || (function () {
 
 		function appendSvgDOM(quadid) {
 
-			if (drawnQuad(quadid)) {
-				return;
-			}
+			if(!graphs[quadid] || !graphs[quadid]["nodes"]) return;
+			if(drawnQuad(quadid)) return;
 
 			var graph = graphs[quadid];
 
@@ -1715,46 +1962,103 @@ var shingle = shingle || (function () {
 				xmax = mapinfo["quadtree"]["xmax"],
 				ymin = mapinfo["quadtree"]["ymin"],
 				ymax = mapinfo["quadtree"]["ymax"],
-				glin = document.createElementNS(xmlns, "g");
+				glin = document.createElementNS(xmlns, "g"),
+				gnod = document.createElementNS(xmlns, "g");
 
-			glin.setAttributeNS(null, "class", "quadcontainer");
+			// EDGES
+			glin.setAttributeNS(null, "class", options.quadClass);
 			glin.setAttributeNS(null, "id", quadid);
 
-			if (options.debugQuads) {
-				var rect = document.createElementNS(xmlns, "rect");
-				rect.setAttributeNS(null, "x", "" + graph["header"]["xmin"]);
-				rect.setAttributeNS(null, "y", "" + graph["header"]["ymin"]);
+			if (options.debugQuads && graph["header"]) {
 
-				rect.setAttributeNS(null, "width", "" + (graph["header"]["xmax"] - graph["header"]["xmin"]));
-				rect.setAttributeNS(null, "height", "" + (graph["header"]["ymax"] - graph["header"]["ymin"]));
+				var	quadStroke = 'black',
+					quadDesc = quadid,
+					quadLevel = quadid.length - 4,
+					textYindent = quadLevel,
+					rect = document.createElementNS(xmlns, "rect"),
+					pixelWidth = (1 / currentScale),
+					xOffset = 2 * quadLevel * pixelWidth,
+					yOffset = 2 * quadLevel * pixelWidth,
+					x = (graph["header"]["xmin"] + xOffset),
+					y = (graph["header"]["ymin"] + xOffset),
+					width = Math.max((graph["header"]["xmax"] - graph["header"]["xmin"] - xOffset * 2), pixelWidth),
+					height = Math.max((graph["header"]["ymax"] - graph["header"]["ymin"] - yOffset * 2), pixelWidth),
+					textFontScale = calcCurrentFontScale();
 
+				/* check the Y indent, which is based on distance of parents top edge */
 
+				var parentQuadid = false
+
+				if(!(quadid.endsWith('_')) && quadLevel < 5) {
+					parentQuadid = quadid.slice(0, -1);
+
+					var parentGraph = graphs[parentQuadid];
+					if(parentGraph && parentGraph["header"]) {
+						if(parentGraph["header"]["ymin"] < graph["header"]["ymin"]) {
+							textYindent = 1 + quadLevel * pixelWidth / 3;
+						}
+					} else {
+						textYindent = 1;
+					}
+				}
+
+				// alternating colors for quads
+				if(graph.shingleIndex > -1) {
+					//quadStroke = rgbA(options.quadDebugColors[graph.shingleIndex % options.quadDebugColors.length]);
+					quadStroke = rgbA(options.quadDebugColors[Math.max(quadLevel - 1, 0) % options.quadDebugColors.length]);
+				}
+
+				rect.setAttributeNS(null, "x", "" + x);
+				rect.setAttributeNS(null, "y", "" + y);
+				rect.setAttributeNS(null, "width", "" + width);
+				rect.setAttributeNS(null, "height", "" + height);
 				rect.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
-				rect.setAttributeNS(null, "stroke-width", "1px");
+				rect.setAttributeNS(null, "stroke-width", 1);
 
 				rect.style.fill = "none";
-				rect.style.stroke = "black";
-				//rect.style.strokeWidth = 2*edgeWidthScale;
+				rect.style.stroke = quadStroke;
 				rect.style.fillOpacity = "0";
 				rect.style.strokeOpacity = "1";
+
+				var textfield = document.createElementNS(xmlns, 'text');
+				rect.setAttributeNS(null, "class", options.debugQuadClass + '-rect');
+				textfield.setAttributeNS(null, "class", options.debugQuadClass + '-text');
+				textfield.setAttributeNS(null, "fill", quadStroke);
+				textfield.setAttributeNS(null, "font-family", options.fontFamily);
+				textfield.setAttributeNS(null, "font-size", textFontScale * 4 / Math.min(quadLevel, 5));
+				textfield.setAttributeNS(null, "x", x + textFontScale + quadLevel * pixelWidth * 2);
+				textfield.setAttributeNS(null, "y", Math.min(y + textFontScale * textYindent * pixelWidth));
+				textfield.addEventListener('mouseenter', function() {
+					rect.setAttributeNS(null, "stroke-width", 3);
+					gnod.setAttributeNS(null, "class", options.debugQuadClass);
+					glin.setAttributeNS(null, "class", options.debugQuadClass);
+				});
+				textfield.addEventListener('mouseleave', function() {
+					rect.setAttributeNS(null, "stroke-width", 1);
+					gnod.setAttributeNS(null, "class", "");
+					glin.setAttributeNS(null, "class", "");
+				});
+
+				var textNode = document.createTextNode(quadDesc);
+				textfield.appendChild(textNode);
+
+				glin.appendChild(textfield);
 				glin.appendChild(rect);
 			}
 
 			scheduler.addTask(new AsyncEdges(quadid, glin));
 
-			var gnod = document.createElementNS(xmlns, "g");
-
+			// NODES
 			quadsDrawn[quadid] = true;
 
-			gnod.setAttributeNS(null, "class", "quadcontainer");
+			gnod.setAttributeNS(null, "class", options.quadClass);
 			gnod.setAttributeNS(null, "id", quadid);
 
+			var circleHTML;
 			for (i = 0; i < graph["nodes"].length; i++) {
-				var node = graph["nodes"][i],
-					circleHTML = MakeNodeElement(quadid, node, nodemodeGraph);
-
-				gnod.innerHTML += circleHTML;
+				circleHTML += MakeNodeElement(quadid, graph["nodes"][i], nodemodeGraph);
 			}
+			gnod.innerHTML = circleHTML;
 
 			if(options.selectNodes) {
 				addNodeEvents(gnod);
@@ -1774,7 +2078,7 @@ var shingle = shingle || (function () {
 			nodescontainer.appendChild(gnod);
 		}
 
-		function setSvgScales(finished) {
+		function execSvgScales(finished) {
 
 			// scale scaling layer
 			scalingEl.setAttribute('transform', 'scale(' + currentScale + ')');			
@@ -1803,13 +2107,16 @@ var shingle = shingle || (function () {
 					// END BUG #1 workaround
 				}
 			}
+		}
 
+		function setSvgScales(finished) {
 			// try to minimize forced reflow here, we should determine completion
 			// of the translation, for now use a little timeout ..
+			execSvgScales(finished);
 			setTimeout(function() {
 				setBoundingrectDims();
 				finished && finished();
-			}, 200);
+			}, 10);
 		}
 
 		function setSvgTranslations() {
@@ -1828,27 +2135,42 @@ var shingle = shingle || (function () {
 			});
 		}
 
+// here scale to
+var execScale = false;
+
 		function scaleTo(level, done) {
 
-			// uniform scale function for use with wheel, slider, api's
-			currentScaleStep = level;
-			currentScale = zoomSteps[level];
+			clearTimeout(execScale);
+			execScale = setTimeout(function() {
 
-			// scaling step by class dyn css
-			mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
+				// uniform scale function for use with wheel, slider, api's
+				currentScaleStep = level;
+				currentScale = zoomSteps[level];
 
-			zoom.value = level;
+				// scaling step by class dyn css
+				mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
 
-			setSvgScales(done);
+				zoom.value = level;
+
+				setSvgScales(done);
+
+			}, 10);
 		}
 
 		function doZoom(step) {
 
 			// notice the zoom function works in reverse in shingle ..
+			var shouldScale = true;
 			currentScaleStep += step;
-			if(currentScaleStep < 0) currentScaleStep = 0;
-			if(currentScaleStep > zoomSteps.length - 1) currentScaleStep = zoomSteps.length - 1;
-			scaleTo(currentScaleStep, function() {
+			if(currentScaleStep < 0) {
+				currentScaleStep = 0;
+				shouldScale = false;
+			}
+			if(currentScaleStep > zoomSteps.length - 1) {
+				currentScaleStep = zoomSteps.length - 1;
+				shouldScale = false;
+			}
+			shouldScale && scaleTo(currentScaleStep, function() {
 				findQuadsToDraw();
 				findQuadsToRemove();
 			});
@@ -2326,6 +2648,8 @@ var shingle = shingle || (function () {
 			initDefaults();
 
 			if (!options.graphPath) return ;
+
+			setBoundingrectDims = options.calcBoundingRectDimsMethodExperimental ? setBoundingrectDimsExperimental : setBoundingrectDimsDefault;
 
 			scheduler = new Scheduler(schedulerStep);
 			highlightScheduler = new Scheduler(highlightschedulerStep)
