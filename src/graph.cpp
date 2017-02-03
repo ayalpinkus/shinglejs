@@ -110,32 +110,39 @@ MFREdgeArray::MFREdgeArray(const char* fname, MFRNodeArray& nodes)
 
   fseek(fin,0,SEEK_END);
   long end = ftell(fin);
-  nredges=end/sizeof(MFREdgeExt);
+  int nredges_saved=end/sizeof(MFREdgeExt);
 
-  edges=(MFREdgeInt*)malloc(nredges*sizeof(MFREdgeInt));
+  nredges = 0;
+
+  edges=(MFREdgeInt*)malloc(nredges_saved*sizeof(MFREdgeInt));
 
   fseek(fin,0,SEEK_SET);
 
   MFREdgeExt extEdge;
 
   int i;
-  for (i=0;i<nredges;i++)
+  for (i=0;i<nredges_saved;i++)
   {
     fread(&extEdge,sizeof(MFREdgeExt),1,fin);
-    edges[i].nodeA = nodes.LookUp(extEdge.nodeidA);
-    edges[i].nodeB = nodes.LookUp(extEdge.nodeidB);
+    edges[nredges].nodeA = nodes.LookUp(extEdge.nodeidA);
+    edges[nredges].nodeB = nodes.LookUp(extEdge.nodeidB);
     
-    if (edges[i].nodeA == NULL)
+    if (edges[nredges].nodeA == NULL)
     {
       fprintf(stderr,"Warning: edge %d: id %s for edge not found.\n", i, extEdge.nodeidA);
+      continue;
     }
-    if (edges[i].nodeB == NULL)
+    if (edges[nredges].nodeB == NULL)
     {
       fprintf(stderr,"Warning: edge %d: id %s for edge not found.\n",i, extEdge.nodeidB);
+      continue;
     }
-    
+    nredges++;
   }
   fclose(fin);
+
+  fprintf(stderr, "%d edges read, %d remaining.\n",nredges_saved, nredges);
+
 
 /*TODO remove?
 fprintf(stderr,"@@@@@@@@@@@@@@\n");
