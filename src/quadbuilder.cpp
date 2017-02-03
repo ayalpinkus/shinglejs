@@ -346,7 +346,15 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
 
 static void WriteHashtable(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree)
 {
-  HashTable hashtable(map_out_path);
+
+  int tablesize = KSymTableSizeSmall;
+
+  if (nodes.nrnodes > 2000000)
+  {
+    tablesize = KSymTableSizeMedium;
+  }
+
+  HashTable hashtable(map_out_path, tablesize);
 
   int i;
   for (i=0;i<nodes.nrnodes;i++)
@@ -354,10 +362,10 @@ static void WriteHashtable(const char* map_out_path, MFRNodeArray &nodes, MFREdg
     int bin = hashtable.Hash(nodes.nodes[i].nodeidp);
     if (!hashtable.first[bin])
     {
-      fprintf(hashtable.buckets[bin],",\n");
+      fprintf(hashtable.Bucket(bin),",\n");
     }
     hashtable.first[bin] = 0;
-    fprintf(hashtable.buckets[bin],"\"%s\" : [%f, %f, \"%s\" ]\n",nodes.nodes[i].nodeidp, nodes.nodes[i].x, nodes.nodes[i].y, nodes.nodes[i].quadNode->quadid);
+    fprintf(hashtable.Bucket(bin),"\"%s\" : [%f, %f, \"%s\" ]\n",nodes.nodes[i].nodeidp, nodes.nodes[i].x, nodes.nodes[i].y, nodes.nodes[i].quadNode->quadid);
   }
 }
 

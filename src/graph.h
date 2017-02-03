@@ -48,6 +48,7 @@ struct MFRNode
   double x;
   double y;
   double size;
+  double level;
   long community;
   QuadNode* quadNode;
 };

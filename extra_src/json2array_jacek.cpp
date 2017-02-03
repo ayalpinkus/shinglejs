@@ -225,6 +225,10 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
   {
     char nodeid[256];
     int hindex=0;
+    double pagerank;
+
+    int pagerank_set = 0;
+
     int asjc=0;
     tokenizer.Match("{");
 
@@ -233,6 +237,8 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
       if (!strcasecmp(tokenizer.nextToken, "eid"))
       {
 
+        pagerank_set = 0;
+        pagerank=0;
         hindex=0;
         asjc=10;
 
@@ -245,6 +251,13 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
         tokenizer.LookAhead();
         tokenizer.Match(":");
         hindex = atoi(tokenizer.nextToken);
+      }
+      else if (!strcasecmp(tokenizer.nextToken, "pagerank"))
+      {
+        tokenizer.LookAhead();
+        tokenizer.Match(":");
+        pagerank = atof(tokenizer.nextToken);
+        pagerank_set = 1;
       }
       else if (!strcasecmp(tokenizer.nextToken, "asjc"))
       {
@@ -289,6 +302,11 @@ static void processMetaNodeFile(MFRNodeArray& nodes, const char* fname)
         asjc = 10;
       }
       node->size = hindex;
+      node->level = hindex;
+      if (pagerank_set)
+      {
+        node->level = pagerank;
+      }
       node->community = asjc;
     }
 

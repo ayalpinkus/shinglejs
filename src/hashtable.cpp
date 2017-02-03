@@ -1,4 +1,5 @@
-
+#include <stdlib.h>
+#include <string.h>
 #include "MFRUtils.h"
 #include "hashtable.h"
 
@@ -41,28 +42,59 @@ int HashTable::Hash( const char *s )
 }
 
 
-
-
-
-HashTable::HashTable(const char* map_out_path)
+void HashTable::CloseBucket()
 {
+  if (bucket)
+  {
+    fclose(bucket);
+    bucket = NULL;
+  }
+}
+
+FILE* HashTable::Bucket(int bin)
+{
+  CloseBucket();
+
+  char fname[512];
+  sprintf(fname,"%stable%d.json", the_map_out_path, bin);
+  bucket = MFRUtils::OpenFile(fname,"a");
+  return bucket;
+}
+
+HashTable::HashTable(const char* map_out_path, int tablesize)
+{
+  symbolTableSize = tablesize;
+  strcpy(the_map_out_path, map_out_path);
+
+  bucket = NULL;
+  
+//TODO remove?  buckets = (FILE**)malloc(tablesize*sizeof(FILE*));
+  first = (int *)malloc(tablesize*sizeof(int));
+
   int i;
-  for (i=0;i<KSymTableSize;i++)
+  for (i=0;i<symbolTableSize;i++)
   {
     char fname[512];
     sprintf(fname,"%stable%d.json", map_out_path, i);
     first[i] = 1;
-    buckets[i] = MFRUtils::OpenFile(fname,"w");
-    fprintf(buckets[i],"{\n");
+    bucket = MFRUtils::OpenFile(fname,"w");
+    fprintf(bucket,"{\n");
+    CloseBucket();
   }
 }
 
 HashTable::~HashTable()
 {
   int i;
-  for (i=0;i<KSymTableSize;i++)
+  for (i=0;i<symbolTableSize;i++)
   {
-    fprintf(buckets[i],"}\n");
-    fclose(buckets[i]);
+    fprintf(Bucket(i),"}\n");
+//TODO remove?    fclose(buckets[i]);
   }
+
+
+  CloseBucket();
+
+//TODO remove?  free(buckets);
+  free(first);
 }

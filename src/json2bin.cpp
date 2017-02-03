@@ -68,7 +68,7 @@ static void processFile(const char* fname)
       {
         tokenizer.LookAhead();
         tokenizer.Match(":");
-        node.size = atof(tokenizer.nextToken);
+        node.size = node.level = atof(tokenizer.nextToken);
       }
       else if (!strcmp(tokenizer.nextToken, "community"))
       {

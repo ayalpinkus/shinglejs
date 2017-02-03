@@ -129,6 +129,19 @@ int sizecompare(const void *a, const void *b)
   else return 0;
 }
 
+int levelcompare(const void *a, const void *b)
+{
+  long indexa = *(long*)a;
+  long indexb = *(long*)b;
+  MFRNodeArray *nds = (MFRNodeArray *)global_mfr_node_array;
+  double diff = (nds->nodes[indexb].level - nds->nodes[indexa].level);
+  if (diff>0) return 1;
+  else if (diff<0) return -1;
+  else return 0;
+}
+
+
+
 void MFRQuadTree::BuildTree(int maxNodesPerQuad)
 {
   maxNodesPerQuadUsed = maxNodesPerQuad;
@@ -172,7 +185,7 @@ void MFRQuadTree::BuildTree(QuadNode* r, int maxNodesPerQuad)
     if (quadLevels)
     {
       global_mfr_node_array = &nodes;
-      qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),sizecompare);
+      qsort(&index[r->lowindex], r->highindex-r->lowindex, sizeof(long),levelcompare);
       thislow = r->lowindex;
       thishigh = thislow + maxNodesPerQuad;
       r->lowindex = thishigh;
