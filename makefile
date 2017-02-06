@@ -2,7 +2,7 @@ include makeinclude
 
 ALL_OBJS = $(OBJ_PATH)graph.o $(OBJ_PATH)quadtree.o $(OBJ_PATH)hashtable.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)jsontokenizer.o
 
-SHINGLEJS_BIN = $(BIN_PATH)quadbuilder.a $(BIN_PATH)json2bin.a $(BIN_PATH)bin2json.a 
+SHINGLEJS_BIN = $(BIN_PATH)quadbuilder.a $(BIN_PATH)json2bin.a $(BIN_PATH)bin2json.a $(BIN_PATH)makebitmap.a
 
 SHINGLE_OUTPUT_FOLDERS = $(OBJ_PATH)created.txt $(BIN_PATH)created.txt $(OUTPUT_PATH)created.txt
 
@@ -34,7 +34,7 @@ $(RELEASE_PATH)_sample.html:
 	cd sampledata/ ; tar zxvf random-graph_500000.json.tgz ; cd ..
 	$(BIN_PATH)json2bin.a sampledata/random-graph_500000.json $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin
 	$(BIN_PATH)quadbuilder.a $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin $(RELEASE_PATH)random-graph_500000/
-	rm $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin
+	echo "rm $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin"
 	cp $(SHINGLE_PATH)html/*.css $(RELEASE_PATH)
 	cp $(SHINGLE_PATH)html/*.js $(RELEASE_PATH)
 	cp $(SHINGLE_PATH)html/_sample.html $(RELEASE_PATH)
@@ -56,6 +56,9 @@ $(OBJ_PATH)MFRUtils.o: src/MFRUtils.cpp src/MFRUtils.h
 
 $(BIN_PATH)quadbuilder.a: src/quadbuilder.cpp $(OBJ_PATH)quadtree.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o src/MFRUtils.h src/graph.h $(OBJ_PATH)hashtable.o src/hashtable.h
 	g++ -o $(BIN_PATH)quadbuilder.a src/quadbuilder.cpp $(OBJ_PATH)quadtree.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o $(OBJ_PATH)hashtable.o
+
+$(BIN_PATH)makebitmap.a: src/makebitmap.cpp $(OBJ_PATH)quadtree.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o src/MFRUtils.h src/graph.h 
+	g++ -o $(BIN_PATH)makebitmap.a src/makebitmap.cpp $(OBJ_PATH)quadtree.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o 
 
 $(BIN_PATH)json2bin.a: src/json2bin.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o src/MFRUtils.h src/jsontokenizer.h src/graph.h
 	g++  -o $(BIN_PATH)json2bin.a src/json2bin.cpp $(OBJ_PATH)jsontokenizer.o $(OBJ_PATH)MFRUtils.o $(OBJ_PATH)graph.o
