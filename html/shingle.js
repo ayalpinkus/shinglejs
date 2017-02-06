@@ -885,6 +885,10 @@ var shingle = shingle || (function () {
 			ajaxGet(options.graphPath + "mapinfo.json", function(response) {
 
 				mapinfo = JSON.parse(response);
+
+				if (mapinfo["symTableSize"] != null) {
+					KSymTableSize = mapinfo["symTableSize"];
+				}
 				
 				if (mapinfo["data-format-version"] == null) {
 					mapinfo["data-format-version"] = 0;

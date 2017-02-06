@@ -19,6 +19,18 @@
 static int quadLevels=1;
 
 
+static int TableSize(int nrnodes)
+{
+  int tablesize = KSymTableSizeSmall;
+
+  if (nrnodes > 2000000)
+  {
+    tablesize = KSymTableSizeMedium;
+  }
+  return tablesize;
+}
+
+
 static int FormatVersionNumber()
 {
   if (quadLevels)
@@ -305,6 +317,9 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
     fprintf(mapinfo_json_file,"  \"averageLineLength\" : %f,\n", quadTree.averageLineLength);
     fprintf(mapinfo_json_file,"  \"averageQuadWidth\" : %f,\n", quadTree.averageQuadWidth);
     fprintf(mapinfo_json_file,"  \"averageQuadHeight\" : %f,\n", quadTree.averageQuadHeight);
+    fprintf(mapinfo_json_file,"  \"symTableSize\" : %d,\n", TableSize(nodes.nrnodes));
+
+
 
     fprintf(mapinfo_json_file,"  \"quadtree\" : \n");
 
@@ -340,19 +355,10 @@ static void WriteMap(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray
 
 
 
-
-
-
-
 static void WriteHashtable(const char* map_out_path, MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree &quadTree)
 {
 
-  int tablesize = KSymTableSizeSmall;
-
-  if (nodes.nrnodes > 2000000)
-  {
-    tablesize = KSymTableSizeMedium;
-  }
+  int tablesize = TableSize(nodes.nrnodes);
 
   HashTable hashtable(map_out_path, tablesize);
 
