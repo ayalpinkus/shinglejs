@@ -33,6 +33,10 @@ $(RELEASE_PATH)_sample.html:
 	-mkdir $(RELEASE_PATH)random-graph_500000/
 	cd sampledata/ ; tar zxvf random-graph_500000.json.tgz ; cd ..
 	$(BIN_PATH)json2bin.a sampledata/random-graph_500000.json $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin
+	$(BIN_PATH)makebitmap.a 2400 0.5 $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)image_2400.pnm
+	-pnmscale 0.5 $(RELEASE_PATH)image_2400.pnm > $(RELEASE_PATH)image_1200.pnm
+	-cjpeg $(RELEASE_PATH)image_2400.pnm > $(RELEASE_PATH)random-graph_500000/image_2400.jpg
+	-cjpeg $(RELEASE_PATH)image_1200.pnm > $(RELEASE_PATH)random-graph_500000/image_1200.jpg
 	$(BIN_PATH)quadbuilder.a $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin $(RELEASE_PATH)random-graph_500000/
 	echo "rm $(RELEASE_PATH)nodes.bin $(RELEASE_PATH)edges.bin"
 	cp $(SHINGLE_PATH)html/*.css $(RELEASE_PATH)

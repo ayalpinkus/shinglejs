@@ -33,6 +33,7 @@ var shingle = shingle || (function () {
 				scaleElClass: 'shingle-scaling',
 				translationElClass: 'shingle-translation',
 				boundingRectElClass: 'shingle-bounding-rect',
+				bitmapcontainerClass: 'shingle-bitmap-container',
 				linescontainerClass: 'shingle-lines-container',
 				highlightedlinescontainerClass: 'shingle-highlighted-lines-container',
 				nodescontainerClass: 'shingle-nodes-container',
@@ -85,7 +86,7 @@ var shingle = shingle || (function () {
 			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
 			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
-			linescontainer, nodescontainer,
+			linescontainer, nodescontainer, bitmapcontainer, 
 			scalingEl, translationEl,
 			startTranslateX = 0, startTranslateY = 0,
 			dragging = false,
@@ -1257,6 +1258,8 @@ var shingle = shingle || (function () {
 			boundingrect.setAttributeNS(null, "height", "" + (ymax - ymin));
 			boundingrect.setAttributeNS(null, "class", options.boundingRectElClass);
 			boundingrect.style.fill = "none";
+
+			//boundingrect.style.fill = "rgb(0,0,0)";
 			/*
 			rect.style.stroke = "black";
 			rect.style.strokeWidth = 0.2 * edgeWidthScale;
@@ -1264,6 +1267,25 @@ var shingle = shingle || (function () {
 			rect.style.strokeOpacity = "0.5";
 			*/
 			translationEl.appendChild(boundingrect);
+
+/*This doesn't work yet, doesn't show the bitmap for some reason.
+                        // Bitmap for all of map
+			bitmapcontainer = document.createElementNS(xmlns, "image");
+			bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
+			bitmapcontainer.setAttributeNS(null, "x", ""+xmin);
+			bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
+			bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
+			bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
+			bitmapcontainer.setAttributeNS(xmlns, "xlink:href", options.graphPath + "image_2400.jpg");
+			translationEl.appendChild(bitmapcontainer);
+*/
+/*
+And this simple example works:
+<svg width="800" height="800">
+  <image x="100" y="100" width="400" height="400" 
+     xlink:href="random-graph_500000/image_2400.jpg"/>
+</svg>
+*/
 
 			// all lines
 			linescontainer = document.createElementNS(xmlns, "g");
