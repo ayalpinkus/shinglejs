@@ -1210,6 +1210,21 @@ var shingle = shingle || (function () {
 			}
 		}
 
+		function updateBitmapOpacity() {
+			if (bitmapcontainer != null) {
+				var delta = currentScaleStep/zoomSteps.length;
+
+				if (delta>=0.75) {
+					bitmapcontainer.style.opacity = 1;
+				} else if (delta>=0.5) {
+				bitmapcontainer.style.opacity = 4*(delta-0.5);
+				} else {
+					bitmapcontainer.style.opacity = 0;
+				}
+			}
+		}
+
+
 		function createBaseSvgDOM() {
 			svgCreated = true;
 
@@ -1277,15 +1292,12 @@ var shingle = shingle || (function () {
 			bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
 			bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
 			bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
+
+			//bitmapcontainer.style.opacity = 1;
+			updateBitmapOpacity();
 			translationEl.appendChild(bitmapcontainer);
 */
-/*
-And this simple example works:
-<svg width="800" height="800">
-  <image x="100" y="100" width="400" height="400" 
-     xlink:href="random-graph_500000/image_2400.jpg"/>
-</svg>
-*/
+
 
 			// all lines
 			linescontainer = document.createElementNS(xmlns, "g");
@@ -2177,7 +2189,7 @@ var execScale = false;
 				mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
 
 				zoom.value = level;
-
+				updateBitmapOpacity();
 				setSvgScales(done);
 
 			}, 10);
