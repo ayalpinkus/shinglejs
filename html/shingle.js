@@ -1268,7 +1268,7 @@ var shingle = shingle || (function () {
 			*/
 			translationEl.appendChild(boundingrect);
 
-/*This doesn't work yet, doesn't show the bitmap for some reason.
+/*Rendering bitmap disabled for now as it messes with the mouse events. And does it work in Chrome?
                         // Bitmap for all of map
 			bitmapcontainer = document.createElementNS(xmlns, "image");
 			bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
@@ -1276,7 +1276,7 @@ var shingle = shingle || (function () {
 			bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
 			bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
 			bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
-			bitmapcontainer.setAttributeNS(xmlns, "xlink:href", options.graphPath + "image_2400.jpg");
+			bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
 			translationEl.appendChild(bitmapcontainer);
 */
 /*
