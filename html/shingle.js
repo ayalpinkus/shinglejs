@@ -1283,7 +1283,7 @@ var shingle = shingle || (function () {
 			*/
 			translationEl.appendChild(boundingrect);
 
-/*Rendering bitmap disabled for now as it messes with the mouse events. And does it work in Chrome?
+/*Rendering bitmap disabled for now as it messes with the mouse events. And does it work in Chrome?*/
                         // Bitmap for all of map
 			bitmapcontainer = document.createElementNS(xmlns, "image");
 			bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
@@ -1293,10 +1293,12 @@ var shingle = shingle || (function () {
 			bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
 			bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
 
-			//bitmapcontainer.style.opacity = 1;
+
+			bitmapcontainer.ondragstart = function() { return false; };
+
 			updateBitmapOpacity();
 			translationEl.appendChild(bitmapcontainer);
-*/
+/**/
 
 
 			// all lines
