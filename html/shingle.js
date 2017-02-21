@@ -8,6 +8,10 @@ var shingle = shingle || (function () {
 			defaults = {
 				// these are equal to the possible settings
 				// commented lines represent other option values
+				useBitmap: false,
+				NULLnodeName: 'unknown',
+				hideNULLnameNodes: false,
+				enableNULLnameNodes: false,
 				translateOffsetX: 0,
 				translateOffsetY: 0,
 				width: '100%',
@@ -54,6 +58,7 @@ var shingle = shingle || (function () {
 				quadDebugColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
 				nodeRadiusScaleFactor: 1/50.0 ,
 				nodeRadiusScalePower: 1.25 ,
+				nodesGrow: false,
 				fontFamily: "sans",
 				fontSize: 18,
 				relatedNodesFontSize: 18,
@@ -66,7 +71,8 @@ var shingle = shingle || (function () {
 				debug: false,
 				debugQuads: false,
 				calcBoundingRectDimsMethodExperimental: false,
-				useMultipleQuadsLoader: true
+				useMultipleQuadsLoader: true,
+				quadDisplayThreshold: 0.25
 			};
 
 		// global private vars
@@ -111,7 +117,11 @@ var shingle = shingle || (function () {
 			mapRect = false, boundingrectDims = false,
 			useGraphCSS = !(navigator.userAgent.toLowerCase().indexOf('firefox') > -1),
 			zoomStep = 0, zoomSteps = [], zoomStepsNodeScales = [], stepScale, currentScaleStep = false, startScaleStep = false, sliderZoomStep,
-			textRects = [], svgDims = false;
+			textRects = [], svgDims = false,
+			currentRect = false,
+			execScale = false;
+
+
 
 		// defaults
 		function initDefaults() {
@@ -290,6 +300,7 @@ var shingle = shingle || (function () {
 					for (var i = 0; i < reqQ.length; i++) {
 
 						var req = reqQ[i], fileName = req.quadid + ".json";
+
 						if(i > 0) quadPars += ',';
 						quadPars += fileName;
 						callbacks[fileName] = req.callback;
@@ -301,7 +312,9 @@ var shingle = shingle || (function () {
 						var quadsArr = JSON.parse(responses);
 						for (var i = 0; i < quadsArr.length; i++) {
 							var response = quadsArr[i];
-							response.fileName && callbacks[response.fileName] && callbacks[response.fileName](response.data);
+							if(response.fileName && callbacks[response.fileName]) {
+								callbacks[response.fileName](response.data);
+							}
 						};
 					});
 
@@ -587,14 +600,13 @@ var shingle = shingle || (function () {
 			if (!quadIntersects(screenrect, root)) {
 				return false;
 			}
-			
+
 			// Too small? don't draw.
-			if ((root["xmax"]-root["xmin"]) < 0.25*(screenrect[2]-screenrect[0])) {
+			if ((root["xmax"]-root["xmin"]) < options.quadDisplayThreshold * (screenrect[2]-screenrect[0])) {
 				return false;
 			}
 
-
-			if ((root["ymax"]-root["ymin"]) < 0.25*(screenrect[3]-screenrect[1])) {
+			if ((root["ymax"]-root["ymin"]) < options.quadDisplayThreshold * (screenrect[3]-screenrect[1])) {
 				return false;
 			}
 
@@ -608,12 +620,18 @@ var shingle = shingle || (function () {
 					'?xmin=' + screenrect[0] +
 					'&ymin=' + screenrect[1] +
 					'&xmax=' + screenrect[2] +
-					'&ymax=' + screenrect[3];
+					'&ymax=' + screenrect[3] +
+					'&quadDisplayThreshold=' + options.quadDisplayThreshold,
+					thisRect = JSON.stringify(screenrect);
+
+			currentRect = thisRect;
 
 			ajaxGet(url, function(response) {
 				if(response) {
 					var quads = JSON.parse(response);
-					if(quads.length) {
+
+					if(quads.length && thisRect == currentRect) {
+
 						for (var i = 0; i < quads.length; i++) {
 							if (!drawnQuad(quads[i])) {
 								loadQuad(quads[i]);
@@ -826,15 +844,25 @@ var shingle = shingle || (function () {
 				});
 			}
 			stepScale = minScale;
+
+			var incScale = options.nodesGrow ? 0.0015 : 0;
+
 			while (stepScale <= maxScale && stepScale >= minScale) {
 
 				if(startScaleStep === false && startScale >= (1 / stepScale)) {
 					startScale = (1 / stepScale);
 					startScaleStep = zoomStep;
+					incScale = false;
 				}
 				zoomSteps[zoomStep] = (1 / stepScale);
 				if(useGraphCSS) {
 					var	scaleFactor = startScale * stepScale * (1 - (Math.log(zoomStep + 1) / 15));
+
+					if(incScale && options.nodesGrow) {
+						incScale += 0.0015;
+					}
+					scaleFactor += incScale;
+
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
 						transform: 'scale(' + scaleFactor + ',' + scaleFactor + ')'
 					});
@@ -913,7 +941,7 @@ var shingle = shingle || (function () {
 
 		function getQuadWithLoader(quadid, callback) {
 			quadsLoader.request(quadid, callback);
-		} 
+		}
 
 		function getQuadSingle(quadid, callback) {
 
@@ -1212,6 +1240,7 @@ var shingle = shingle || (function () {
 
 		function updateBitmapOpacity() {
 			if (bitmapcontainer != null) {
+
 				var delta = currentScaleStep/zoomSteps.length;
 
 				if (delta>=0.75) {
@@ -1223,7 +1252,6 @@ var shingle = shingle || (function () {
 				}
 			}
 		}
-
 
 		function createBaseSvgDOM() {
 			svgCreated = true;
@@ -1273,8 +1301,6 @@ var shingle = shingle || (function () {
 			boundingrect.setAttributeNS(null, "height", "" + (ymax - ymin));
 			boundingrect.setAttributeNS(null, "class", options.boundingRectElClass);
 			boundingrect.style.fill = "none";
-
-			//boundingrect.style.fill = "rgb(0,0,0)";
 			/*
 			rect.style.stroke = "black";
 			rect.style.strokeWidth = 0.2 * edgeWidthScale;
@@ -1283,23 +1309,24 @@ var shingle = shingle || (function () {
 			*/
 			translationEl.appendChild(boundingrect);
 
-/*Rendering bitmap disabled for now as it messes with the mouse events. And does it work in Chrome?*/
-                        // Bitmap for all of map
-			bitmapcontainer = document.createElementNS(xmlns, "image");
-			bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
-			bitmapcontainer.setAttributeNS(null, "x", ""+xmin);
-			bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
-			bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
-			bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
-			bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
+/* Rendering bitmap still messes with the mouse events ? */
 
+            // Bitmap for all of map
+            if(options.useBitmap) {
+				bitmapcontainer = document.createElementNS(xmlns, "image");
+				bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
+				bitmapcontainer.setAttributeNS(null, "x", ""+xmin);
+				bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
+				bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
+				bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
 
-			bitmapcontainer.ondragstart = function() { return false; };
+				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
 
-			updateBitmapOpacity();
-			translationEl.appendChild(bitmapcontainer);
-/**/
+				bitmapcontainer.ondragstart = function() { return false; };
+				updateBitmapOpacity();
 
+				translationEl.appendChild(bitmapcontainer);
+            }
 
 			// all lines
 			linescontainer = document.createElementNS(xmlns, "g");
@@ -1671,7 +1698,7 @@ var shingle = shingle || (function () {
 			// ensure unique elemid quick 'fix'
 			var elemid = instance + '-' + elemClass + node.nodeid;
 
-			if(node.name && node.name != 'unknown') {
+			if(node.name && node.name != settings.NULLnodeName) {
 
 				var textfield = document.getElementById(elemid);
 
@@ -1716,6 +1743,15 @@ var shingle = shingle || (function () {
 			return elemid;
 		}
 
+		function checkQuadToDraw(quadid) {
+			if(graphs[quadid] && graphs[quadid].header) {
+				var screenrect = containerWorldRect();
+
+				return shouldQuadBeVisible(screenrect, graphs[quadid].header);
+			}
+			return false;
+		}
+
 		function ScheduledAppendQuad(quadid) {
 			this.quadid = quadid;
 			drawQ[quadid] = true;
@@ -1723,7 +1759,8 @@ var shingle = shingle || (function () {
 			this.call = function () {
 
 				if(graphs[quadid]) {
-					appendSvgDOM(quadid);
+
+ 					appendSvgDOM(quadid);
 
 					setTimeout(function() {
 						delete drawQ[quadid];
@@ -1823,37 +1860,47 @@ var shingle = shingle || (function () {
 						continue;
 					}
 
+					var drawEdge = true;
+
 					var pos = graphA["idmap"][graph["relations"][this.i].nodeidA],
 						node1 = graphA["nodes"][pos],
 						x1 = graphA["nodes"][pos].x,
 						y1 = graphA["nodes"][pos].y;
 
-					pos = graphB["idmap"][graph["relations"][this.i].nodeidB];
+					if((!node1.name || node1.name == settings.NULLnodeName) && settings.hideNULLnameNodes) drawEdge = false;
 
-					var node2 = graphB["nodes"][pos],
-						x2 = graphB["nodes"][pos].x,
-						y2 = graphB["nodes"][pos].y,
-						edgeOpacity = 0.5,
-						line = makeLineElement(x1, y1, x2, y2);
+					if(drawEdge) {
+						pos = graphB["idmap"][graph["relations"][this.i].nodeidB];
 
-					line.id = this.quadid + "-edge-" + this.i;
-					line.style.stroke = "" + edgeColor(node1, node2);
-					line.setAttributeNS(null, "stroke-opacity", "" + edgeOpacity);
+						var node2 = graphB["nodes"][pos],
+							x2 = graphB["nodes"][pos].x,
+							y2 = graphB["nodes"][pos].y,
+							edgeOpacity = 0.5,
+							line = makeLineElement(x1, y1, x2, y2);
 
-					//		var msie = (window.navigator.userAgent.indexOf("MSIE ") > 0);
-					//      if (msie)
-					//      {
-					//			var edgeWidth = 1;
-					//        line.setAttributeNS (null, "stroke-width",""+(edgeWidth*edgeWidthScale)); 
-					//      }
-					//      else
-					//{
-					line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
-					line.setAttributeNS(null, "stroke-width", "1px");
-					//}
+						if((!node2.name || node2.name == settings.NULLnodeName) && settings.hideNULLnameNodes) drawEdge = false;
 
-					line.setAttributeNS(null, "stroke-linecap", "round");
-					glin.appendChild(line);
+						if(drawEdge) {
+							line.id = this.quadid + "-edge-" + this.i;
+							line.style.stroke = "" + edgeColor(node1, node2);
+							line.setAttributeNS(null, "stroke-opacity", "" + edgeOpacity);
+
+							//		var msie = (window.navigator.userAgent.indexOf("MSIE ") > 0);
+							//      if (msie)
+							//      {
+							//			var edgeWidth = 1;
+							//        line.setAttributeNS (null, "stroke-width",""+(edgeWidth*edgeWidthScale)); 
+							//      }
+							//      else
+							//{
+							line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
+							line.setAttributeNS(null, "stroke-width", "1px");
+							//}
+
+							line.setAttributeNS(null, "stroke-linecap", "round");
+							glin.appendChild(line);
+						}
+					}
 
 					this.i = this.i + 1;
 				}
@@ -1899,7 +1946,11 @@ var shingle = shingle || (function () {
 				color = nodeColor(node, opacity);
 			}
 
-			var circleHtml = '<circle class="' + options.nodeClass + '"' +
+			var circleHtml = '';
+
+			if(node.name && (node.name != settings.NULLnodeName || !settings.hideNULLnameNodes)) {
+
+				circleHtml = '<circle class="' + options.nodeClass + '"' +
 							'id="' + id + '"' +
 							'data-quadid="' + quadid + '"' +
 							'data-name="' + node.name + '"' +
@@ -1912,6 +1963,7 @@ var shingle = shingle || (function () {
 							'show-name-on-hover="' + textId + '"' +
 							'fill="' + color + '">' +
 							'</circle>';
+			}
 
 			return circleHtml;
 		}
@@ -1920,9 +1972,14 @@ var shingle = shingle || (function () {
 			container.addEventListener('mousedown', function (e) {
 				e.cancelBubble = true;
 				var node = e.target;
+
 				if(node) {
-					currentnodeid = node.getAttribute('data-nodeid');
-					showInfoAbout(node.getAttribute('data-quadid'), node.getAttribute('data-nodeid'));
+					var name = node.getAttribute('data-name');
+
+					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
+						currentnodeid = node.getAttribute('data-nodeid');
+						showInfoAbout(node.getAttribute('data-quadid'), node.getAttribute('data-nodeid'));
+					}
 				}
 			});
 
@@ -2175,9 +2232,6 @@ var shingle = shingle || (function () {
 			});
 		}
 
-// here scale to
-var execScale = false;
-
 		function scaleTo(level, done) {
 
 			clearTimeout(execScale);
@@ -2194,7 +2248,7 @@ var execScale = false;
 				updateBitmapOpacity();
 				setSvgScales(done);
 
-			}, 10);
+			}, 20);
 		}
 
 		function doZoom(step) {
@@ -2354,20 +2408,22 @@ var execScale = false;
 				var index = graph["idmap"][nodeid];
 				var node = graph["nodes"][index];
 
-				// bounding rect only change on pan, zoom and external move (focusIn)
-				setBoundingrectDims();
+				if(node) {
+					// bounding rect only change on pan, zoom and external move (focusIn)
+					setBoundingrectDims();
 
-				var rect = containerWorldRect();
-				if (node.x < rect[0] ||
-					node.y < rect[1] ||
-					node.x > rect[2] ||
-					node.y > rect[3])
-				{
-					currentTranslateX = -node.x;
-					currentTranslateY = -node.y;
-					setSvgTranslations();
-					findQuadsToDraw();
-					findQuadsToRemove();
+					var rect = containerWorldRect();
+					if (node.x < rect[0] ||
+						node.y < rect[1] ||
+						node.x > rect[2] ||
+						node.y > rect[3])
+					{
+						currentTranslateX = -node.x;
+						currentTranslateY = -node.y;
+						setSvgTranslations();
+						findQuadsToDraw();
+						findQuadsToRemove();
+					}
 				}
 			}
 		}
@@ -2488,13 +2544,17 @@ var execScale = false;
 					tries = 0,
 					drawEdge = function() {
 						node2 = graphB["nodes"][graphB["idmap"][toNode.node]];
+
 						if (fromNode != null && node2 != null) {
+
 							// visualize edge between 2 highlighted nodes
 							if(!self.relatedDrawn[node2.nodeid]) {
 								self.relatedDrawn[node2.nodeid] = true;
 								self.createEdge(toNode.quad, fromNode, node2);
-								// callbacks for related nodes only when on map
-								options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+								if(node2.name && node2.name != settings.NULLnodeName) {
+									// callbacks for related nodes only when on map
+									options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+								}
 							}
 						}
 					};
