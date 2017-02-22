@@ -1309,8 +1309,6 @@ var shingle = shingle || (function () {
 			*/
 			translationEl.appendChild(boundingrect);
 
-/* Rendering bitmap still messes with the mouse events ? */
-
             // Bitmap for all of map
             if(options.useBitmap) {
 				bitmapcontainer = document.createElementNS(xmlns, "image");
@@ -1321,6 +1319,9 @@ var shingle = shingle || (function () {
 				bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
 
 				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
+				bitmapcontainer.addEventListener('error', function() {
+					bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", "");
+				});
 
 				bitmapcontainer.ondragstart = function() { return false; };
 				updateBitmapOpacity();
