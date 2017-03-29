@@ -1,3 +1,5 @@
+"use strict";
+
 var shingle = shingle || (function () {
 
 	var instances = 0,
@@ -45,6 +47,7 @@ var shingle = shingle || (function () {
 				highlightednamescontainerClass: 'shingle-highlighted-names-container',
 				nodeClass: 'shingle-node',
 				nodeTextClass: 'shingle-node-text',
+				highlightedNodeClass: 'shingle-node-highlighted',
 				highlightedNodeTextClass: 'shingle-node-h-text',
 				mapClass: 'shingle-map',
 				quadClass: 'shingle-quad',
@@ -52,6 +55,7 @@ var shingle = shingle || (function () {
 				debugNodeClass: 'shingle-debug-node',
 				nodeColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
 				defaultNodeColor: [214, 29, 79],
+				edgeClass: 'shingle-edge',
 				edgeColor: [213, 213, 213],
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
@@ -67,7 +71,7 @@ var shingle = shingle || (function () {
 				infoSyncDelay: 100,
 				//lineType: "Straight",
 				lineType: "EllipticalArc",
-				hoverDelay: 100,
+				hoverDelay: 66,
 				debug: false,
 				debugQuads: false,
 				calcBoundingRectDimsMethodExperimental: false,
@@ -75,9 +79,75 @@ var shingle = shingle || (function () {
 				quadDisplayThreshold: 0.25
 			};
 
+		function isFirefox() {
+			return (navigator.userAgent.toLowerCase().indexOf('firefox') > -1);
+		};
+
+		function isIE() {
+			return (navigator.userAgent.toLowerCase().indexOf('msie') > -1) || (navigator.userAgent.toLowerCase().indexOf('trident') > -1);
+		};
+
+		// IE polyfills needed by shingle
+		if (!String.prototype.startsWith) {
+			Object.defineProperty(String.prototype, 'startsWith', {
+				enumerable: false,
+				configurable: false,
+				writable: false,
+				value: function(searchString, position) {
+				    position = position || 0;
+					return this.substr(position, searchString.length) === searchString;
+				}
+			});
+		}
+		if (!('classList' in Element.prototype)) {
+			var ClassList = function(element) {
+				this.element = element;
+			}
+			ClassList.prototype = {
+				get: function() {
+					return this.element.getAttributeNS(null, "class");
+				}, set: function(name) {
+					this.element.setAttributeNS(null, "class", name);
+				}, add: function(addName) {
+					var classStr = this.get();
+					if(!classStr) classStr = addName;
+					else {
+						var clsArr = classStr.split(' ');
+						if(clsArr.length && clsArr.indexOf(addName) == -1) {
+							clsArr.push(addName);
+						}
+						classStr = clsArr.join(' ');
+					}
+					this.set(classStr);
+				}, remove: function(remName) {
+					var classStr = this.get();
+					if(classStr) {
+						var clsArr = classStr.split(' ');
+						if(clsArr.length) {
+							while(true) {
+								var i = clsArr.indexOf(remName);
+								if(i == -1) break;
+								clsArr.splice(i, 1);
+							}
+						}
+						classStr = clsArr.join(' ');
+					}
+					this.set(classStr);
+				}
+			};
+			Object.defineProperty(Element.prototype, 'classList', {
+				get: function() {
+				    return new ClassList(this);
+				}
+			});
+		}
+
 		// global private vars
 		var nodeInfo, makeLineElement,
 			xmlns = "http://www.w3.org/2000/svg",
+			SVGversion = "1.2",
+			baseProfile = "tiny",
+			svg12T = !isIE(),
 			mapinfo = null,
 			graphs = {},
 			nodeRadiusScale = 1.0 / 100.0,
@@ -115,13 +185,14 @@ var shingle = shingle || (function () {
 			quadsWithHighlightedNodes = {},
 			svg = document.createElementNS(xmlns, "svg"),
 			mapRect = false, boundingrectDims = false,
-			useGraphCSS = !(navigator.userAgent.toLowerCase().indexOf('firefox') > -1),
 			zoomStep = 0, zoomSteps = [], zoomStepsNodeScales = [], stepScale, currentScaleStep = false, startScaleStep = false, sliderZoomStep,
 			textRects = [], svgDims = false,
 			currentRect = false,
-			execScale = false;
-
-
+			execScale = false,
+			nodeScaleTimer = false,
+			quadsCache = {},
+			dragCoordinates = { x: false, y: false },
+			origin = location.origin || (location.protocol + "//" + location.hostname + (location.port ? ':' + location.port: ''));
 
 		// defaults
 		function initDefaults() {
@@ -272,18 +343,154 @@ var shingle = shingle || (function () {
 			}
 		}, dragTimer = new Timer();
 
-		function ajaxGet(url, callback) {
-			var xmlhttp = new XMLHttpRequest();
-			xmlhttp.overrideMimeType("application/json");
+		function ajaxRequest() {
 
-			xmlhttp.onreadystatechange = function () {
-				if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
-					callback && callback(xmlhttp.responseText);
+			var self = this;
+
+			this.xhr = null;
+			this.options = null;
+			this.IElt10 = false;
+			this.isCORS = false;
+
+			this.xhr = new XMLHttpRequest();
+			// XHR for Chrome/Firefox/Opera/Safari has withCredentials
+			if (!("withCredentials" in this.xhr)) {
+				if (typeof XDomainRequest != "undefined") {
+					// XDomainRequest for IE < 10.
+					this.IElt10 = true;
+				} else {
+					// CORS not supported.
+					this.xhr = null;
 				}
 			};
 
-			xmlhttp.open("GET", url, true);
-			xmlhttp.send();
+			this.init = function(options) {
+				this.options = options;
+				if(this.options.failure) {
+					// retoute timeouts and cors errors to failure if not explicitly set and failure
+					// is defined
+					if(!this.options.ontimeout) {
+						this.options.ontimeout = function() {
+							self.options.failure('timeout');
+						}
+					}
+					if(!this.options.corsnotsupported) {
+						this.options.ontimeout = function() {
+							self.options.failure('CORS error');
+						}
+					}
+				}
+				this.options.method = options.method || 'GET';
+				if(this.options.url.startsWith('http://')) {
+					// cors check
+					if(!this.options.url.startsWith(origin)) {
+						this.isCORS = true;
+					}
+				}
+				// CORS in old IE
+				if(this.isCORS && this.IElt10) this.xhr = new XDomainRequest();
+			};
+
+			this.open = function() {
+				var url = this.options.url;
+
+				this.options.data = this.options.data || {};
+				this.options.data.httpAccept = this.options.httpAccept || 'application/json';
+
+				var params = [];
+				for (var par in this.options.data) {
+					params.push(encodeURIComponent(par) + '=' + encodeURIComponent(this.options.data[par]));
+				}
+
+				url += (params.length && url.indexOf('?') == -1) ? '?' + params.join('&') : '';
+
+				if(this.IElt10) {
+					this.xhr.open(this.options.method, url);
+				} else {
+					this.xhr.open(this.options.method, url, true);
+				}
+			};
+
+			this.send = function(options) {
+
+				this.init(options);
+
+				if(this.xhr) {
+					if(this.options.url && this.options.success) {
+						this.open();
+						// Response handlers.
+						this.xhr.onload = function() {
+							if(self.IElt10) {
+								self.options.success(self.xhr.responseText);
+							} else {
+								if(self.xhr.readyState) {
+									if(self.options.statusChange) {
+										var statusText = self.xhr.readyState;
+										if(self.xhr.status) {
+											statusText += ' (' + self.xhr.status + ')';
+										} 
+										self.options.statusChange(statusText);
+									}
+									if(self.xhr.readyState == 4) {
+										if(self.xhr.status < 400) {
+											self.options.success(self.xhr.responseText);
+										} else {
+											var errorText = 'error HTTP response ' + self.xhr.status;
+											if(self.options.failure) {
+												self.options.failure(errorText);
+											}
+										}
+									}
+								} else {
+									if(self.xhr.status < 400) {
+										self.options.success(self.xhr.responseText);
+									} else {
+										var errorText = 'error HTTP response ' + self.xhr.status;
+										if(self.options.failure) {
+											self.options.failure(errorText);
+										}
+									}
+								}
+							}
+						};
+						if(this.options.failure) {
+							this.xhr.onerror = function(error) {
+								self.options.failure(error);
+							};
+						}
+						// ie9 not working without this..
+						if(this.xhr.onprogress !== undefined) {
+							this.xhr.onprogress = function() {
+								self.options.progress && self.options.progress(self.IElt10 ? self.xhr.responseText : arguments);
+							};
+						}
+						// ie11 in ie9 mode not working without this..
+						if(this.xhr.ontimeout !== undefined) {
+							this.xhr.ontimeout = this.options.timeout || function() { };
+						}
+						//
+						// 500 errors and some cors errors occur during send
+						this.xhr.send();
+					}
+				} else {
+					if(this.options.corsnotsupported) {
+						this.options.corsnotsupported();
+					}
+				}
+			};
+
+			return this;
+		};
+
+		function ajaxGet(url, callback) {
+
+			var req = new ajaxRequest(url, "GET", callback);
+
+			req.send({
+				url: url,
+				success: callback,
+				failure: function(e) { console.log(e); }
+			});
 		}
 
 		// module for loading quads
@@ -691,22 +898,22 @@ var shingle = shingle || (function () {
 		function findQuadsToRemove() {
 
 			var i;
-			var screenrect = containerWorldRect(),
-				elements = svg.getElementsByClassName(options.quadClass);
+			var screenrect = containerWorldRect();
 
-			for (var i = 0; i < elements.length; i++) {
-				var el = elements[i],
-					elid = el.id,
-					header = graphs[elid].header;
+			for (var quadId in quadsDrawn) {
 
-				if (quadsWithHighlightedNodes.hasOwnProperty(elid)) {
-					continue;
-				}
+				if(!quadsDrawn.hasOwnProperty(quadId)) continue;
+				if(quadsWithHighlightedNodes.hasOwnProperty(quadId)) continue;
+
+				var quadDrawn = quadsDrawn[quadId],
+					header = graphs[quadId].header;
+
 				if (header != null) {
 					if (!shouldQuadBeVisible(screenrect, header)) {
-						el.parentNode.removeChild(el);
-						if(quadsDrawn[elid]) delete quadsDrawn[elid];
-						i--;
+
+						if(quadDrawn.lines && quadDrawn.lines.parentNode) quadDrawn.lines.parentNode.removeChild(quadDrawn.lines);
+						if(quadDrawn.nodes && quadDrawn.nodes.parentNode) quadDrawn.nodes.parentNode.removeChild(quadDrawn.nodes);
+						delete quadsDrawn[quadId];
 					}
 				}
 			}
@@ -746,24 +953,6 @@ var shingle = shingle || (function () {
 					}
 					else if (shouldQuadBeVisible(screenrect, header)) {
 						visible = true;
-					} else {
-						/*
-						var referenced = graph["referenced"];
-						var j;
-
-						for (j = 0; j < referenced.length; j++) {
-							var othergraph = graphs[referenced[j]];
-							if (othergraph == null) {
-								continue;
-							}
-							header = othergraph.header;
-
-							if (shouldQuadBeVisible(screenrect, header)) {
-								visible = true;
-								break;
-							}
-						}
-						*/
 					}
 					if (visible == false) {
 						//
@@ -787,7 +976,8 @@ var shingle = shingle || (function () {
 			}
 
 			ajaxGet(url, function(response) {
-				var table = JSON.parse(response)
+
+				var table = JSON.parse(response),
 					entry = table[nodeid],
 					doRender = true;
 
@@ -809,7 +999,6 @@ var shingle = shingle || (function () {
 
 					if (highlightedQuad != null) {
 						//console.log("going to load higlighted quad "+highlightedQuad);
-
 						loadNonCompactQuad(highlightedQuad,true);
 					}
 				}
@@ -838,14 +1027,36 @@ var shingle = shingle || (function () {
 			startNodeScale = calcNodeScale(startScale);
 
 			// use generated scaling steps, scaling using dynamic generated css
-			if(useGraphCSS) {
-				graphCSS.set('.' + options.nodeClass, {
-					'transform-origin': 'initial'
-				});
-			}
 			stepScale = minScale;
 
 			var incScale = options.nodesGrow ? 0.0015 : 0;
+
+			// reverse edge width
+			if(svg12T) {
+				graphCSS.set('.' + options.mapClass + ' .' + options.edgeClass, {
+					'vector-effect': 'non-scaling-stroke', 'stroke-linecap': 'round'
+				});
+				graphCSS.set('.' + options.mapClass + ' .' + options.linescontainerClass + ' .' + options.edgeClass, {
+					'font-size': '1px'
+				});
+				graphCSS.set('.' + options.mapClass + ' .' + options.highlightedlinescontainerClass + ' .' + options.edgeClass, {
+					'font-size': '2px'
+				});
+			}
+
+			// lines and nodes opacity based on focussed node
+			graphCSS.set('.' + options.mapClass + ' .' + options.nodescontainerClass, {
+				'opacity': '1'
+			});
+			graphCSS.set('.' + options.mapClass + ' .' + options.linescontainerClass, {
+				'opacity': '1'
+			});
+			graphCSS.set('.' + options.mapClass + ' svg.with-focus' + ' .' + options.nodescontainerClass, {
+				'opacity': '0.5'
+			});
+			graphCSS.set('.' + options.mapClass + ' svg.with-focus' + ' .' + options.linescontainerClass, {
+				'opacity': svg12T ? '0.25' : '0.5'
+			});
 
 			while (stepScale <= maxScale && stepScale >= minScale) {
 
@@ -855,24 +1066,48 @@ var shingle = shingle || (function () {
 					incScale = false;
 				}
 				zoomSteps[zoomStep] = (1 / stepScale);
-				if(useGraphCSS) {
-					var	scaleFactor = startScale * stepScale * (1 - (Math.log(zoomStep + 1) / 15));
 
-					if(incScale && options.nodesGrow) {
-						incScale += 0.0015;
-					}
-					scaleFactor += incScale;
-
-					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
-						transform: 'scale(' + scaleFactor + ',' + scaleFactor + ')'
+				// edge width base em should always be around 2px at the screen
+				// strictly only needed when SVG 1.2T not supported by the browser
+				if(!svg12T) {
+					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.linescontainerClass + ' .' + options.edgeClass, {
+						'stroke-width': Math.max((stepScale * 2), 0.017) + 'px'
 					});
-					zoomStepsNodeScales[zoomStep] = scaleFactor;
+					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.highlightedlinescontainerClass + ' .' + options.edgeClass, {
+						'stroke-width': Math.max((stepScale * 6), 0.033) + 'px'
+					});
 				}
+
+				var	scaleFactor = startScale * stepScale * (1 - (Math.log(zoomStep + 1) / 15));
+
+				if(incScale && options.nodesGrow) {
+					incScale += 0.0015;
+				}
+				scaleFactor += incScale;
+
+				// reverse scale the node based on zoom level
+				// keep in mind a min-width when using IE otherwise the nodes will disappear ..
+				var scaleFactorM = svg12T ? scaleFactor : Math.max(scaleFactor, 0.04);
+				graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
+					'font-size': scaleFactorM + 'px'
+				});
+
+				// the highlighted node is 1.5 times bigger
+				graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass + '.' + options.highlightedNodeClass, {
+					'font-size': (scaleFactorM * 1.5) + 'px'
+				});
+				graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' g.' + options.highlightedNodeClass + ' .' + options.nodeClass, {
+					'font-size': (scaleFactorM * 1.5) + 'px'
+				});
+
+				zoomStepsNodeScales[zoomStep] = scaleFactor;
+
 				stepScale *= 1.1;
 				zoomStep++;
 			}
+
 			// debug quad hover visual indicators
-			if(useGraphCSS && options.debugQuads) {
+			if(options.debugQuads) {
 				graphCSS.set('.' + options.debugQuadClass + '-text', {
 					'fill-opacity': '0.78'
 				});
@@ -939,16 +1174,35 @@ var shingle = shingle || (function () {
 			});
 		}
 
+		function getQuadCache(quadid, found, notfound) {
+			if(quadsCache[quadid]) {
+				found(quadsCache[quadid]);
+			} else {
+				notfound();
+			}
+		}
+
 		function getQuadWithLoader(quadid, callback) {
-			quadsLoader.request(quadid, callback);
+			getQuadCache(quadid, callback, function() {
+				quadsLoader.request(quadid, function(quad) {
+
+					quadsCache[quadid] = quad;
+					callback(quad);
+				});
+			});
 		}
 
 		function getQuadSingle(quadid, callback) {
+			getQuadCache(quadid, callback, function() {
 
-			var json_url = options.graphPath + quadid + ".json";
+				var json_url = options.graphPath + quadid + ".json";
 
-			ajaxGet(json_url, function(response) {
-				callback(JSON.parse(response));
+				ajaxGet(json_url, function(response) {
+					var quad = JSON.parse(response);
+
+					quadsCache[quadid] = quad;
+					callback(quad);
+				});
 			});
 		}
 
@@ -976,6 +1230,7 @@ var shingle = shingle || (function () {
 				return;
 			}
 			var doload = true;
+
 			// Check to see if we already have a non-compact quad loaded
 			if (graphs[quadid]) {
 				if (graphs[quadid]["header"]["compact"] != true) {
@@ -986,7 +1241,6 @@ var shingle = shingle || (function () {
 			if (doload) {
 
 				getQuad("e" + quadid, function(graph) {
-
 					if (loadReferenced) {
 						keepHighlightedNodesLoaded(graph);
 					}
@@ -994,27 +1248,13 @@ var shingle = shingle || (function () {
 					if (graphs[quadid] != null) {
 
 						if (graphs[quadid]["header"]["compact"] == true) {
-							var i;
-							var elements = svg.getElementsByClassName(options.quadClass);
-							for (var i = 0; i < elements.length; i++) {
-								var el = elements[i];
-								var elid = el.id;
-								if (elid == quadid) {
 
-									el.parentNode.removeChild(el);
-									if(quadsDrawn[elid]) {
-										delete quadsDrawn[elid];
-									}
-									break;
-								}
-							}
-							
-						
-							for (i = 1; i < scheduler.tasks.length; i++) {
-								if (scheduler.tasks[i].quadid == quadid) {
-									scheduler.tasks.splice(i, 1);
-									i--;
-								}
+							if(quadsDrawn[quadid]) {
+								var quadDrawn = quadsDrawn[quadid];
+
+								if(quadDrawn.lines && quadDrawn.lines.parentNode) quadDrawn.lines.parentNode.removeChild(quadDrawn.lines);
+								if(quadDrawn.nodes && quadDrawn.nodes.parentNode) quadDrawn.nodes.parentNode.removeChild(quadDrawn.nodes);
+								delete quadsDrawn[quadid];
 							}
 						}
 						else {
@@ -1076,7 +1316,6 @@ var shingle = shingle || (function () {
 
 		function keepHighlightedNodesLoaded(graph) {
 			if(graph["relations"]) {
-				quadsWithHighlightedNodes = {};
 				var nredges = graph["relations"].length;
 				var k;
 				for (k = 0; k < nredges; k++) {
@@ -1085,8 +1324,7 @@ var shingle = shingle || (function () {
 					var nodeidB = graph["relations"][k].nodeidB;
 					var quadB = graph["relations"][k].quadB;
 
-					if (nodeidA == currentnodeid || nodeidB == currentnodeid) 
-					{
+					if (nodeidA == currentnodeid || nodeidB == currentnodeid) {
 						quadsWithHighlightedNodes[quadA] = 1;
 						quadsWithHighlightedNodes[quadB] = 1;
 					}
@@ -1095,6 +1333,13 @@ var shingle = shingle || (function () {
 		}
 
 		function forgetHighlightedNodesLoaded() {
+			for (var quadId in quadsWithHighlightedNodes) {
+				if (quadsWithHighlightedNodes.hasOwnProperty(quadId) && quadsDrawn[quadId]) {
+					var quadDrawn = quadsDrawn[quadId];
+						if(quadDrawn.lines && quadDrawn.lines.parentNode) quadDrawn.lines.parentNode.removeChild(quadDrawn.lines);
+						if(quadDrawn.nodes && quadDrawn.nodes.parentNode) quadDrawn.nodes.parentNode.removeChild(quadDrawn.nodes);
+				}
+			}
 			quadsWithHighlightedNodes = {};
 		}
 
@@ -1105,7 +1350,6 @@ var shingle = shingle || (function () {
 		}
 
 		function handleMouseDown(evt) {
-
 			dragTimer.start();
 
 			dragCoordinates.x = evt.pageX;
@@ -1146,10 +1390,14 @@ var shingle = shingle || (function () {
 
 			dragTimer.end();
 
+			if(!dragCoordinates.x || !dragCoordinates.y) return ;
+
 			var deltaX = evt.pageX - dragCoordinates.x,
 				deltaY = evt.pageY - dragCoordinates.y;
 
 			dragging = false;
+			dragCoordinates.x = false;
+			dragCoordinates.y = false;
 
 			// an actual pan
 			if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
@@ -1174,11 +1422,34 @@ var shingle = shingle || (function () {
 					if(options.containerWithFocusClass) {
 						options.el.classList.remove(options.containerWithFocusClass);
 					}
-					options.onBlur && options.onBlur();
+					options.onBlur && options.onBlur(currentScaleStep);
 					syncInfoDisplay(false);
 				}
+			} else {
+				// pan
+				options.onPan && options.onPan(deltaX, deltaY, currentScaleStep);
 			}
 		}
+
+		function detectScrollRegular(evt, callback) {
+
+			var delta = evt.wheelDelta / 40;
+
+			if (delta) {
+				callback((delta > 0) ? -1 : 1);
+			}
+		};
+
+		function detectScrollFirefox(evt, callback) {
+
+			var delta = evt.deltaY || evt.detail || 0;
+
+			if (delta) {
+				callback((delta > 0) ? 1 : -1);
+			}
+		};
+
+		var detectScroll = isFirefox() ? detectScrollFirefox : detectScrollRegular;
 
 		function attachMouseEvents() {
 
@@ -1221,17 +1492,15 @@ var shingle = shingle || (function () {
 
 					var handleScroll = function (evt) {
 
-						var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
-
-						if (delta) {
-							doZoom((delta > 0) ? -1 : 1);
-						}
-
+						detectScroll(evt, function(delta) {
+							doZoom(delta);
+						});
 						return evt.preventDefault() && false;
 					};
 				}
 
 				if (options.scrollZoom) {
+
 					var wheelEvent = "onwheel" in mfrmap ? "wheel" : document.onmousewheel !== undefined ? "mousewheel" : "DOMMouseScroll";
 					mfrmap.addEventListener(wheelEvent, handleScroll, false);
 				}
@@ -1253,6 +1522,19 @@ var shingle = shingle || (function () {
 			}
 		}
 
+		function loadBitmap(name, callback) {
+			var xmlHTTP = new XMLHttpRequest();
+			xmlHTTP.open('GET', options.graphPath + name, true);
+			xmlHTTP.responseType = 'arraybuffer';
+			xmlHTTP.onload = function(e) {
+			    var blob = new Blob([this.response]);
+				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", window.URL.createObjectURL(blob));
+				updateBitmapOpacity();
+				callback && callback();
+			};
+			xmlHTTP.send();
+		}
+
 		function createBaseSvgDOM() {
 			svgCreated = true;
 
@@ -1262,6 +1544,8 @@ var shingle = shingle || (function () {
 				ymin = mapinfo["quadtree"]["ymin"],
 				ymax = mapinfo["quadtree"]["ymax"];
 
+			svg.setAttributeNS(null, "version", SVGversion);
+			svg.setAttributeNS(null, "baseProfile", baseProfile);
 			svg.setAttributeNS(null, "viewBox", "" + xmin + " " + ymin + " " + (xmax - xmin) + " " + (ymax - ymin) + "");
 
 			options.el.style.width = options.width;
@@ -1310,6 +1594,8 @@ var shingle = shingle || (function () {
 			translationEl.appendChild(boundingrect);
 
             // Bitmap for all of map
+            // Note IE9 does not support Blobs
+            if(options.useBitmap && typeof(Blob) == "undefined") options.useBitmap = false;
             if(options.useBitmap) {
 				bitmapcontainer = document.createElementNS(xmlns, "image");
 				bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
@@ -1317,17 +1603,18 @@ var shingle = shingle || (function () {
 				bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
 				bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
 				bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
+				bitmapcontainer.style.opacity = 0;
 
-				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", options.graphPath + "image_2400.jpg");
-				bitmapcontainer.addEventListener('error', function() {
-					bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", "");
+				loadBitmap("image_2400low.jpg", function() {
+					loadBitmap("image_2400.jpg");
 				});
 
 				bitmapcontainer.ondragstart = function() { return false; };
-				updateBitmapOpacity();
 
 				translationEl.appendChild(bitmapcontainer);
             }
+
+            // append the layer containers
 
 			// all lines
 			linescontainer = document.createElementNS(xmlns, "g");
@@ -1344,18 +1631,19 @@ var shingle = shingle || (function () {
 			nodescontainer.setAttributeNS(null, "class", options.nodescontainerClass);
 			translationEl.appendChild(nodescontainer);
 
+			// names of the highlighted nodes
+			highlightednamescontainer = document.createElementNS(xmlns, "g");
+			highlightednamescontainer.setAttributeNS(null, "class", options.highlightednamescontainerClass);
+			translationEl.appendChild(highlightednamescontainer);
+
 			// highlighted nodes and related nodes
+			// last in sequence because names van 'overlap' the nodes which impacts event handlers in FF
 			highlightednodescontainer = document.createElementNS(xmlns, "g");
 			highlightednodescontainer.setAttributeNS(null, "class", options.highlightednodescontainerClass);		
 			translationEl.appendChild(highlightednodescontainer);
 			if(options.selectNodes) {
 				addNodeEvents(highlightednodescontainer);
 			}
-
-			// names of the highlighted nodes
-			highlightednamescontainer = document.createElementNS(xmlns, "g");
-			highlightednamescontainer.setAttributeNS(null, "class", options.highlightednamescontainerClass);
-			translationEl.appendChild(highlightednamescontainer);
 
 			mfrmap.appendChild(svg);
 		}
@@ -1440,6 +1728,8 @@ var shingle = shingle || (function () {
 
 			//
 			// calculate fontsize of text element to display as specified fontSize in px on screen
+			var size;
+
 			calcBaseScale();
 			if(!fontScale) {
 				fontScale = options.fontSize * baseScale;
@@ -1462,30 +1752,14 @@ var shingle = shingle || (function () {
 
 		function calcNodeScale(scale) {
 			if (quadLevels) {
-				/*
-				var	ymin = mapinfo["quadtree"]["ymin"],
-					ymax = mapinfo["quadtree"]["ymax"],
-					rect = getMapRect(),
-					graphHeight = ymax - ymin,
-					svgHeight = rect.bottom - rect.top,
-					svgHeightFactor = svgHeight / graphHeight;
-
-				return (1.0 / ( startScale * svgHeightFactor ));
-				*/
 				return ( 18.0 / scale );
 			}
 			return 1;
 		}
 
-		function calcCurrentNodeScaleGraphCSS() {
+		function calcCurrentNodeScale() {
 			return startNodeScale;
 		}
-
-		function calcCurrentNodeScaleJS() {
-			return calcNodeScale(currentScale);
-		}
-
-		var calcCurrentNodeScale = useGraphCSS ? calcCurrentNodeScaleGraphCSS : calcCurrentNodeScaleJS;
 
 		function textBoxCollides(tRect) {
 
@@ -1528,7 +1802,7 @@ var shingle = shingle || (function () {
 
 		function getTextRect(textfield, node, onHoverOnly, fontAttrs, nodeOffSets, mainNode) {
 
-			offSets = nodeOffSets || {
+			var offSets = nodeOffSets || {
 				x: 1,
 				y: -1
 			};
@@ -1536,7 +1810,7 @@ var shingle = shingle || (function () {
 			offSets.yc = 0;
 
 			var	range = nodeRange(node),
-				nodeScaleFactor = useGraphCSS ? zoomStepsNodeScales[currentScaleStep] : 1,
+				nodeScaleFactor = zoomStepsNodeScales[currentScaleStep],
 				nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale() * nodeScaleFactor;
 
 			// recreate text
@@ -1549,17 +1823,23 @@ var shingle = shingle || (function () {
 
 			var ttDims, fontSize;
 
+			ttDims = {
+				width: 0,
+				height: 0
+			};
 			if(typeof fontAttrs == 'object') {
 				// calculate new size from old and new
 				fontSize = fontAttrs.newSize;
-				ttDims = {
-					width: (fontAttrs.oldWidth / fontAttrs.oldSize) * fontAttrs.newSize,
-					height: (fontAttrs.oldHeight / fontAttrs.oldSize) * fontAttrs.newSize
-				}
+				ttDims.width = (fontAttrs.oldWidth / fontAttrs.oldSize) * fontAttrs.newSize;
+				ttDims.height = (fontAttrs.oldHeight / fontAttrs.oldSize) * fontAttrs.newSize;
 			} else {
 				// first time, get the bounding box
 				fontSize = fontAttrs;
-				ttDims = textfield.getBBox();
+				// can cause errors in firefox if not yet appended to DOM
+				// since we need it to be not visible just use exception for now
+				try {
+					ttDims = textfield.getBBox();
+				} catch(e) { };
 			}
 
 			if(offSets.x < 0) {
@@ -1732,6 +2012,10 @@ var shingle = shingle || (function () {
 				textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
 				textfield.setAttributeNS(null, "x", textRect.left);
 				textfield.setAttributeNS(null, "y", textRect.top);
+
+				// optionally let caller manipulate node name
+				if(options.setNodeName) node.name = options.setNodeName(node);
+
 				textfield.textContent = node.name;
 
 				// anti collision for display / hide text
@@ -1795,6 +2079,7 @@ var shingle = shingle || (function () {
 
 			line.setAttributeNS(null, "d", "" + d);
 			line.setAttributeNS(null, "fill", "none");
+			line.setAttributeNS(null, "class", options.edgeClass);
 
 			return line;
 		}
@@ -1803,22 +2088,18 @@ var shingle = shingle || (function () {
 
 			var line = document.createElementNS (xmlns, "line");
 			 
-			line.setAttributeNS (null, "x1", ""+x1);
-			line.setAttributeNS (null, "y1", ""+y1);
-			line.setAttributeNS (null, "x2", ""+x2);
-			line.setAttributeNS (null, "y2", ""+y2);
+			line.setAttributeNS(null, "x1", ""+x1);
+			line.setAttributeNS(null, "y1", ""+y1);
+			line.setAttributeNS(null, "x2", ""+x2);
+			line.setAttributeNS(null, "y2", ""+y2);
+			line.setAttributeNS(null, "class", options.edgeClass);
 
 			return line;
 		}
 
-		function nodeRange(node) {
-
+		function nodeSizeRange(nodesize) {
 			var minsize = mapinfo["minsize"];
 			var maxsize = mapinfo["maxsize"];
-
-			// HERE bug #1
-			// Uncaught TypeError: Cannot read property 'size' of null(…) at 1156
-			var nodesize = node.size;
 
 			var range = 0.5;
 			if (Math.abs(maxsize - minsize) > 0.00001) {
@@ -1829,9 +2110,15 @@ var shingle = shingle || (function () {
 			return range;
 		}
 
+		function nodeRange(node) {
+			if(!node || !node.size) return 0;
+			return nodeSizeRange(node.size);
+		}
+
 		function AsyncEdges(quadid, glin) {
 			this.quadid = quadid;
 			this.i = 0;
+
 			this.call = function ()
 			{
 
@@ -1876,7 +2163,6 @@ var shingle = shingle || (function () {
 						var node2 = graphB["nodes"][pos],
 							x2 = graphB["nodes"][pos].x,
 							y2 = graphB["nodes"][pos].y,
-							edgeOpacity = 0.5,
 							line = makeLineElement(x1, y1, x2, y2);
 
 						if((!node2.name || node2.name == settings.NULLnodeName) && settings.hideNULLnameNodes) drawEdge = false;
@@ -1884,21 +2170,7 @@ var shingle = shingle || (function () {
 						if(drawEdge) {
 							line.id = this.quadid + "-edge-" + this.i;
 							line.style.stroke = "" + edgeColor(node1, node2);
-							line.setAttributeNS(null, "stroke-opacity", "" + edgeOpacity);
-
-							//		var msie = (window.navigator.userAgent.indexOf("MSIE ") > 0);
-							//      if (msie)
-							//      {
-							//			var edgeWidth = 1;
-							//        line.setAttributeNS (null, "stroke-width",""+(edgeWidth*edgeWidthScale)); 
-							//      }
-							//      else
-							//{
-							line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
-							line.setAttributeNS(null, "stroke-width", "1px");
-							//}
-
-							line.setAttributeNS(null, "stroke-linecap", "round");
+							line.setAttributeNS(null, "stroke-width", "1em");
 							glin.appendChild(line);
 						}
 					}
@@ -1915,7 +2187,7 @@ var shingle = shingle || (function () {
 			return this;
 		}
 
-		function MakeNodeElement(quadid, node, mode, showNameOnHover) {
+		function MakeNodeElementUsingCircle(quadid, node, mode, showNameOnHover) {
 
 			var highlighted = ((mode & nodemodeflagHighlighted) != 0);
 			var centered = ((mode & nodemodeflagCentered) != 0);
@@ -1947,57 +2219,159 @@ var shingle = shingle || (function () {
 				color = nodeColor(node, opacity);
 			}
 
-			var circleHtml = '';
+			var circle = document.createElementNS(xmlns, circleTag);
 
 			if(node.name && (node.name != settings.NULLnodeName || !settings.hideNULLnameNodes)) {
 
-				circleHtml = '<circle class="' + options.nodeClass + '"' +
-							'id="' + id + '"' +
-							'data-quadid="' + quadid + '"' +
-							'data-name="' + node.name + '"' +
-							'data-nodeid="' + node.nodeid + '"' +
-							'cx="' + x + '"' +
-							'cy="' + y + '"' +
-							'r="' + nodeRadius + '"' +
-							'stroke="' + nodeEdgeColor(node) + '"' +
-							'stroke-width="' + nEdgeWid + '"' +
-							'show-name-on-hover="' + textId + '"' +
-							'fill="' + color + '">' +
-							'</circle>';
+				// base props
+				circle.setAttributeNS(null, "class", options.nodeClass);
+				circle.setAttributeNS(null, "id", id);
+				circle.setAttributeNS(null, "data-quadid", quadid);
+				circle.setAttributeNS(null, "data-name", node.name);
+				circle.setAttributeNS(null, "data-nodeid", "" + node.nodeid);
+				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
+				circle.setAttributeNS(null, "show-name-on-hover", textId);
+
+				// dimensions
+				circle.setAttributeNS(null, "cx", "" + x);
+				circle.setAttributeNS(null, "cy", "" + y);
+				circle.setAttributeNS(null, "r", "" + nodeRadius + "em");
+				circle.setAttributeNS(null, "stroke", "" + nodeEdgeColor(node));
+				circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
+				circle.setAttributeNS(null, "fill", color);
 			}
 
-			return circleHtml;
+			return circle;
 		}
+
+		function MakeNodeElementUsingLine(quadid, node, mode, showNameOnHover) {
+
+			var highlighted = ((mode & nodemodeflagHighlighted) != 0);
+			var centered = ((mode & nodemodeflagCentered) != 0);
+
+			var x = node.x;
+			var y = node.y;
+
+			var range = nodeRange(node);
+
+			var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale();
+			var nEdgeWid = 0;
+			var opacity;
+
+			var id = getNodeId(quadid, node.nodeid, highlighted),
+				textId = showNameOnHover ? options.highlightedNodeTextClass + node.nodeid : false;
+
+			if (highlighted) {
+				nodeRadius *= 1.5;
+				opacity = 1;
+			} else {
+				opacity = 0.6;
+			}
+
+			var color;
+			if (centered) {
+				color = rgbA([255, 255, 255]); // pure white
+				nEdgeWid = 5 * nodeEdgeWidth(range) * nodeEdgeRadiusScale;
+			} else {
+				color = nodeColor(node, opacity);
+			}
+
+			var circle = document.createElementNS(xmlns, circleTag);
+
+			if(node.name && (node.name != settings.NULLnodeName || !settings.hideNULLnameNodes)) {
+
+				// base props
+				circle.setAttributeNS(null, "class", options.nodeClass);
+				circle.setAttributeNS(null, "id", id);
+				circle.setAttributeNS(null, "data-quadid", quadid);
+				circle.setAttributeNS(null, "data-name", node.name);
+				circle.setAttributeNS(null, "data-nodeid", "" + node.nodeid);
+				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
+				circle.setAttributeNS(null, "show-name-on-hover", textId);
+
+				// dimensions
+				circle.setAttributeNS(null, "x1", "" + x);
+				circle.setAttributeNS(null, "y1", "" + y);
+				circle.setAttributeNS(null, "x2", "" + x);
+				circle.setAttributeNS(null, "y2", "" + y);
+				circle.setAttributeNS(null, "stroke-linecap", "round");
+				// note we set the radius using the stroke-width and the fill using the stroke..
+				circle.setAttributeNS(null, "stroke-width", "" + (nodeRadius * 2) + "em");
+				circle.setAttributeNS(null, "stroke", color);
+
+				if(nEdgeWid > 0) {
+					// beause we use stroke-width already we need a second circle as the stroke ..
+					var circle1 = circle.cloneNode(false),
+						circle2 = circle.cloneNode(false);
+
+					circle2.setAttributeNS(null, "stroke-width", "" + ((nodeRadius + nEdgeWid) * 2) + "em");
+					circle2.setAttributeNS(null, "stroke", nodeEdgeColor(node));
+
+					circle = document.createElementNS(xmlns, 'g');
+					circle.setAttributeNS(null, "class", circleTag);
+					circle.setAttributeNS(null, "id", id);
+					circle.setAttributeNS(null, "data-quadid", quadid);
+					circle.setAttributeNS(null, "data-name", node.name);
+					circle.setAttributeNS(null, "data-nodeid", "" + node.nodeid);
+					circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
+					circle.setAttributeNS(null, "show-name-on-hover", textId);
+					circle.appendChild(circle2);
+					circle.appendChild(circle1);
+				} 
+			}
+
+			return circle;
+		}
+
+		// because firefox does not always repaint circle css correctly we use a line 'hack'
+		var useCircleEl = false,
+			circleTag = useCircleEl ? "circle" : "line",
+			MakeNodeElement = useCircleEl ? MakeNodeElementUsingCircle : MakeNodeElementUsingLine;
 
 		function addNodeEvents(container) {
 			container.addEventListener('mousedown', function (e) {
-				e.cancelBubble = true;
 				var node = e.target;
 
 				if(node) {
+					e.cancelBubble = true;
+
 					var name = node.getAttribute('data-name');
 
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
-						currentnodeid = node.getAttribute('data-nodeid');
-						showInfoAbout(node.getAttribute('data-quadid'), node.getAttribute('data-nodeid'));
+						var nodeId = node.getAttribute('data-nodeid'),
+							quadId = node.getAttribute('data-quadid');
+
+						currentnodeid = nodeId;
+						showInfoAbout(quadId, nodeId);
+						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
 					}
 				}
+			});
+			container.addEventListener('mouseup', function (e) {
+				var node = e.target;
+
+				if(node) e.cancelBubble = true;
 			});
 
 			var hoverAction = false;
 
 			container.addEventListener('mouseover', function (e) {
+
 				e.cancelBubble = true;
 				var node = e.target;
-				if(node && node.tagName == 'circle') {
-					var quadId = node.getAttribute('data-quadid'),
-						nodeId = node.getAttribute('data-nodeid');
 
-					hoverAction && clearTimeout(hoverAction);
-					hoverAction = setTimeout(function() {
-						hoverIn(quadId, nodeId);
-						hoverAction = false;
-					}, options.hoverDelay);
+				if(node) {
+					if(node.tagName == circleTag || (node.tagName == 'g' && node.getAttributeNS(null, "class") == circleTag)) {
+
+						var quadId = node.getAttribute('data-quadid'),
+							nodeId = node.getAttribute('data-nodeid');
+
+						hoverAction && clearTimeout(hoverAction);
+						hoverAction = setTimeout(function() {
+							hoverIn(quadId, nodeId);
+							hoverAction = false;
+						}, options.hoverDelay);
+					}
 				}
 			});
 			container.addEventListener('mouseleave', function (e) {
@@ -2017,9 +2391,13 @@ var shingle = shingle || (function () {
 					var e = evt.changedTouches[0],
 						node = e.target;
 					if(node) {
-						showInfoAbout(node.getAttribute('data-quadid'), node.getAttribute('data-nodeid'));
+						var quadId = node.getAttribute('data-quadid'),
+							nodeId = node.getAttribute('data-nodeid');
+
+						showInfoAbout(quadId, nodeId);
 						evt.preventDefault();
 						evt.cancelBubble = true;
+						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
 					}
 				});
 
@@ -2054,19 +2432,79 @@ var shingle = shingle || (function () {
 				return;
 			}
 
-			var i;
+			graph.els = graph.els || { glin: null, gnod: null };
 
+/*
 			var xmin = mapinfo["quadtree"]["xmin"],
 				xmax = mapinfo["quadtree"]["xmax"],
 				ymin = mapinfo["quadtree"]["ymin"],
 				ymax = mapinfo["quadtree"]["ymax"],
-				glin = document.createElementNS(xmlns, "g"),
+*/
+
+			var glin;
+
+			if(graph.els.glin == null) {
+				// lines container for quad
+				glin = document.createElementNS(xmlns, "g");
+				graph.els.glin = glin;
+
+				// EDGES
+				glin.setAttributeNS(null, "class", options.quadClass);
+				glin.setAttributeNS(null, "id", quadid);
+
+				scheduler.addTask(new AsyncEdges(quadid, glin));
+
+			} else {
+
+				glin = graph.els.glin;
+				setTimeout(function() {
+					linescontainer.appendChild(glin);
+				}, 10);
+			}
+
+
+			quadsDrawn[quadid] = {
+				lines: glin
+			};
+
+			// NODES
+			// nodes container for quad
+			var gnod;
+
+			if(graph.els.gnod == null) {
 				gnod = document.createElementNS(xmlns, "g");
+				graph.els.gnod = gnod;
+				gnod.setAttributeNS(null, "class", options.quadClass);
+				gnod.setAttributeNS(null, "id", quadid);
 
-			// EDGES
-			glin.setAttributeNS(null, "class", options.quadClass);
-			glin.setAttributeNS(null, "id", quadid);
+				for (var i = 0; i < graph["nodes"].length; i++) {
+					var circle = MakeNodeElement(quadid, graph["nodes"][i], nodemodeGraph);
+					gnod.appendChild(circle);
+				}
 
+				if(options.selectNodes) {
+					addNodeEvents(gnod);
+				}
+			} else {
+				gnod = graph.els.gnod;
+			}
+
+			if (highlightednodescontainer != null) {
+
+				if (highlightednodescontainer.firstChild == null) {
+
+					var lookup = graph["idmap"][currentnodeid];
+					if (lookup) {
+						showInfoAbout(quadid, currentnodeid);
+					}
+				}
+			}
+
+			nodescontainer.appendChild(gnod);
+
+			quadsDrawn[quadid].nodes = gnod;
+
+			// DEBUG
 			if (options.debugQuads && graph["header"]) {
 
 				var	quadStroke = 'black',
@@ -2143,37 +2581,6 @@ var shingle = shingle || (function () {
 				glin.appendChild(textfield);
 				glin.appendChild(rect);
 			}
-
-			scheduler.addTask(new AsyncEdges(quadid, glin));
-
-			// NODES
-			quadsDrawn[quadid] = true;
-
-			gnod.setAttributeNS(null, "class", options.quadClass);
-			gnod.setAttributeNS(null, "id", quadid);
-
-			var circleHTML;
-			for (i = 0; i < graph["nodes"].length; i++) {
-				circleHTML += MakeNodeElement(quadid, graph["nodes"][i], nodemodeGraph);
-			}
-			gnod.innerHTML = circleHTML;
-
-			if(options.selectNodes) {
-				addNodeEvents(gnod);
-			}
-
-			if (highlightednodescontainer != null) {
-
-				if (highlightednodescontainer.firstChild == null) {
-
-					var lookup = graph["idmap"][currentnodeid];
-					if (lookup) {
-						showInfoAbout(quadid, currentnodeid);
-					}
-				}
-			}
-
-			nodescontainer.appendChild(gnod);
 		}
 
 		function execSvgScales(finished) {
@@ -2183,28 +2590,6 @@ var shingle = shingle || (function () {
 
 			// scale texts
 			scaleTextRects();
-
-			// scale nodes JS when applicable
-			if (!useGraphCSS && quadLevels) {
-
-				var nsize = calcCurrentNodeScale(),
-					nodeEls = svg.getElementsByClassName(options.nodeClass);
-
-				len = nodeEls.length;
-				for (i = 0; i < len; i++) {
-					var element = nodeEls[i];
-					var node = getNodesData(element.getAttribute('data-quadid'), element.getAttribute('data-nodeid'));
-
-					// HERE bug #1, node sometimes not found not in quads and is undefined
-					// for now just ignore ..
-					if(node) {
-						var range = nodeRange(node);
-						var nodeRadius = calcNodeRadius(range) * nodeRadiusScale * nsize;
-						element.setAttributeNS(null, "r", nodeRadius);
-					}
-					// END BUG #1 workaround
-				}
-			}
 		}
 
 		function setSvgScales(finished) {
@@ -2239,6 +2624,8 @@ var shingle = shingle || (function () {
 			execScale = setTimeout(function() {
 
 				// uniform scale function for use with wheel, slider, api's
+				var onZoomFn = (prevScaleStep > level) ? 'onZoomIn' : 'onZoomOut';
+
 				currentScaleStep = level;
 				currentScale = zoomSteps[level];
 
@@ -2247,28 +2634,31 @@ var shingle = shingle || (function () {
 
 				zoom.value = level;
 				updateBitmapOpacity();
+				onZoomFn && options[onZoomFn] && options[onZoomFn](level);
 				setSvgScales(done);
 
 			}, 20);
 		}
 
+		var prevScaleStep;
+
 		function doZoom(step) {
 
 			// notice the zoom function works in reverse in shingle ..
-			var shouldScale = true;
+			prevScaleStep = currentScaleStep;
 			currentScaleStep += step;
 			if(currentScaleStep < 0) {
 				currentScaleStep = 0;
-				shouldScale = false;
 			}
 			if(currentScaleStep > zoomSteps.length - 1) {
 				currentScaleStep = zoomSteps.length - 1;
-				shouldScale = false;
 			}
-			shouldScale && scaleTo(currentScaleStep, function() {
-				findQuadsToDraw();
-				findQuadsToRemove();
-			});
+			if(prevScaleStep != currentScaleStep) {
+				scaleTo(currentScaleStep, function() {
+					findQuadsToRemove();
+					findQuadsToDraw();
+				});
+			}
 		}
 
 		function zoomIn() {
@@ -2280,107 +2670,65 @@ var shingle = shingle || (function () {
 		}
 
 		function zoomReset() {
+			options.onZoomReset && options.onZoomReset();
 			currentScaleStep = startScaleStep;
 			scaleTo(currentScaleStep, function() {
-				findQuadsToDraw();
 				findQuadsToRemove();
+				findQuadsToDraw();
 			});
 		}
 
 		function HighlightedNode() {
 			this.currentHighlightedId = null;
 			this.currentHighlightedIdHighlighted = null;
-			this.currentHighlightedQuadId = 0;
-			this.currentHighlightedIndex = 0;
+
+			this.ishighlighted = function() {
+				return (this.currentHighlightedId != null);
+			}
 
 			this.unhighlight = function () {
+
 				if (this.currentHighlightedId != null) {
-					var graph = graphs[this.currentHighlightedQuadId];
-					if (graph == null) {
-						return;
-					}
 
-					var node = graph["nodes"][this.currentHighlightedIndex];
-					if (node == null) {
-						return;
-					}
-
-					var range = nodeRange(node),
-						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
-						nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale(),
-						circle = document.getElementById(this.currentHighlightedId);
-
+					// unhighight the node
+					var	circle = document.getElementById(this.currentHighlightedId);
 					if (circle) {
-						circle.setAttributeNS(null, "r", nodeRadius);
-						circle.setAttributeNS(null, "stroke-width", "0");
+						circle.classList.remove(options.highlightedNodeClass);
 					}
 
-					circle = document.getElementById(this.currentHighlightedIdHighlighted);
-					
+					// unhighight the highlighted node (highlighted nodes layer)
+					circle = document.getElementById(this.currentHighlightedIdHighlighted);					
 					if (circle) {
-						var textid = circle.getAttributeNS(null, 'show-name-on-hover');
-						if(textid && textid != "false") {
-							document.getElementById(textid).style.display = "none";
-						}
-						circle.setAttributeNS(null, "r", nodeRadius * 1.5);
-						circle.setAttributeNS(null, "stroke-width", "" + nEdgeWid);
+						circle.classList.remove(options.highlightedNodeClass);
 					}
 				}
 			};
 
 			this.sethighlighted = function (quadid, nodeid) {
-				var graph = graphs[quadid];
-				if (graph == null) {
-					return;
-				}
-				this.currentHighlightedQuadId = quadid;
-				this.currentnodeid = nodeid;
-
-				this.currentHighlightedIndex = graph["idmap"][nodeid];
-				if (this.currentHighlightedIndex == null) {
-					return;
-				}
-
-				this.currentHighlightedId = getNodeId(this.currentHighlightedQuadId, graph["nodes"][this.currentHighlightedIndex].nodeid, false);
-				this.currentHighlightedIdHighlighted = this.currentHighlightedId + "highlighted";
+				this.currentHighlightedId = getNodeId(quadid, nodeid, false);
+				this.currentHighlightedIdHighlighted = getNodeId(quadid, nodeid, true);
 			};
 
 			this.highlight = function () {
 
-				calcBaseScale();
+				var	circle = document.getElementById(this.currentHighlightedId);
 
-				if (this.currentHighlightedId != null) {
-					var graph = graphs[this.currentHighlightedQuadId];
-					if (graph == null) {
-						return;
+				// highight the node
+				if (circle) {
+					circle.classList.add(options.highlightedNodeClass);
+				}
+
+				// highight the highlighted node (highlighted nodes layer)
+				circle = document.getElementById(this.currentHighlightedIdHighlighted);
+				if (circle) {
+					var textid = circle.getAttributeNS(null, 'show-name-on-hover');
+					if(textid && textid != "false") {
+						document.getElementById(textid).style.display = "initial";
 					}
-
-					var node = graph["nodes"][this.currentHighlightedIndex];
-					if (node == null) {
-						return;
-					}
-
-					var range = nodeRange(node),
-						nEdgeWid = nodeEdgeWidth(range) * nodeEdgeRadiusScale,
-						nodeRadius = calcNodeRadius(range) * nodeRadiusScale * calcCurrentNodeScale() * 1.5,
-						circle = document.getElementById(this.currentHighlightedId);
-
-					if (circle) {
-						circle.setAttribute("r", nodeRadius);
-						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
-					}
-
-					circle = document.getElementById(this.currentHighlightedIdHighlighted);
-					if (circle) {
-						var textid = circle.getAttributeNS(null, 'show-name-on-hover');
-						if(textid && textid != "false") {
-							document.getElementById(textid).style.display = "initial";
-						}
-						circle.setAttribute("r", nodeRadius * 1.5);
-						circle.setAttributeNS(null, "stroke-width", "" + 5 * nEdgeWid);
-					}
+					circle.classList.add(options.highlightedNodeClass);
 				}
 			};
+
 			return this;
 		}
 
@@ -2401,7 +2749,6 @@ var shingle = shingle || (function () {
 		}
 
 		function changehighlightTo(quadid, nodeid) {
-
 			showInfoAbout(quadid, nodeid);
 			var graph = graphs[quadid];
 
@@ -2439,6 +2786,15 @@ var shingle = shingle || (function () {
 			this.loadingQuad = false;
 			this.relatedDrawn = {},
 			this.j = 0;
+			this.cancelFlag = false;
+
+			this.cancel = function() {
+				self.cancelFlag = true;
+			};
+
+			this.cancelled = function() {
+				return self.cancelFlag;
+			};
 
 			this.findNodeFrom = function() {
 
@@ -2481,14 +2837,11 @@ var shingle = shingle || (function () {
 					// draw the selected node ?
 					if (highlightednodescontainer != null && node1 != null) {
 
-						var circleHTML = MakeNodeElement(this.quadid, node1, nodemodeCentered);
-						highlightednodescontainer.innerHTML += circleHTML;
-
 						// clear and show main node name, only at first cycle !
 						if(this.j < 100) {
 
-							var circleHTML = MakeNodeElement(this.quadid, node1, nodemodeCentered);
-							highlightednodescontainer.innerHTML += circleHTML;
+							var circle = MakeNodeElement(this.quadid, node1, nodemodeCentered);
+							highlightednodescontainer.appendChild(circle);
 
 							clearNodeNames();
 							showNodeName(this.quadid, node1, options.highlightedNodeTextClass);
@@ -2505,24 +2858,19 @@ var shingle = shingle || (function () {
 
 				var x1 = node1.x, y1 = node1.y,
 					x2 = node2.x, y2 = node2.y,
-					edgeOpacity = 0.5,
 					line = makeLineElement(x1, y1, x2, y2);
 
 				line.style.stroke = "" + edgeHighlightColor(node1, node2);
-				line.setAttributeNS(null, "stroke-opacity", "1");
-
-				line.setAttributeNS(null, "vector-effect", "non-scaling-stroke");
-				line.setAttributeNS(null, "stroke-width", "2px");
-				line.setAttributeNS(null, "stroke-linecap", "round");
+				line.setAttributeNS(null, "stroke-width", "1em");
 				highlightedlinescontainer.appendChild(line);
 
 				if (highlightednodescontainer != null && node2 != null) {
 
 					// related nodes
 					var showNameOnHover = (options.showRelatedNodeNames == 'hover'),
-						circleHTML = MakeNodeElement(quadid, node2, nodemodeHighlighted, showNameOnHover);
+						circle = MakeNodeElement(quadid, node2, nodemodeHighlighted, showNameOnHover);
 
-					highlightednodescontainer.innerHTML += circleHTML;
+					highlightednodescontainer.appendChild(circle);
 
 					//
 					// show the related node names ?
@@ -2533,6 +2881,7 @@ var shingle = shingle || (function () {
 							y: (y2 < y1) ? -1 : 1,
 							d: Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2))
 						}
+
 						showNodeName(quadid, node2, options.highlightedNodeTextClass, showNameOnHover, offSets);
 					}
 				}
@@ -2563,15 +2912,21 @@ var shingle = shingle || (function () {
 				if(!graphB) {
 
 					loadQuad(toNode.quad);
+					if(!quadsWithHighlightedNodes[toNode.quad]) {
+						quadsWithHighlightedNodes[toNode.quad] = 1;
+					}
 
 					var quadWatcher = setInterval(function() {
-
-						graphB = graphs[toNode.quad];
-						if (graphB) {
+						if(self.cancelled()) {
 							clearInterval(quadWatcher);
-							drawEdge();
 						} else {
-							if(++tries > 99) clearInterval(quadWatcher);
+							graphB = graphs[toNode.quad];
+							if (graphB) {
+								clearInterval(quadWatcher);
+								drawEdge();
+							} else {
+								if(++tries > 99) clearInterval(quadWatcher);
+							}
 						}
 					}, 200);
 				} else {
@@ -2591,7 +2946,7 @@ var shingle = shingle || (function () {
  						return true;
 					}
 
-					function drawRelatedEdges(quadid) {
+					var drawRelatedEdges = function(quadid) {
 
 						var url = options.graphPath + 'findRelations' +
 								'?quadid=' + quadid +
@@ -2603,6 +2958,7 @@ var shingle = shingle || (function () {
 
 								if(relations && relations.toNodes && relations.toNodes.length) {
 									for (var i = 0; i < relations.toNodes.length; i++) {
+										if(self.cancelled()) break;
 										self.drawRelatedEdge(self.nodeFrom.node, relations.toNodes[i]);
 									};
 								}
@@ -2684,6 +3040,7 @@ var shingle = shingle || (function () {
 
 			if (last_async_showmfrinfo != null) {
 				last_async_showmfrinfo.j = 1000000;
+				last_async_showmfrinfo.cancel();
 			}
 			triggerClear();
 
@@ -2703,30 +3060,36 @@ var shingle = shingle || (function () {
 
 		function removeInfoAbout() {
 
-			textRects = [];
-			linescontainer.setAttributeNS(null, "opacity", "1");
-			nodescontainer.setAttributeNS(null, "opacity", "1");
+			if(currentHighlightedNode.ishighlighted()) {
+				textRects = [];
 
-			currentHighlightedNode.unhighlight();
-			forgetHighlightedNodesLoaded();
+				svg.classList.remove('with-focus');
 
-			if(highlightedlinescontainer.firstChild) highlightedlinescontainer.innerHTML = "";
-			if(highlightednodescontainer.firstChild) highlightednodescontainer.innerHTML = "";
+				currentHighlightedNode.unhighlight();
+				forgetHighlightedNodesLoaded();
 
-			triggerClear();
+				// remove highlighted lines
+				while (highlightedlinescontainer.firstChild) {
+					highlightedlinescontainer.removeChild(highlightedlinescontainer.firstChild);
+				}
+				// remove highlighted nodes
+				while (highlightednodescontainer.firstChild) {
+					highlightednodescontainer.removeChild(highlightednodescontainer.firstChild);
+				}
+
+				triggerClear();
+			}
 		}
 
 		function showInfoAbout(quadid, nodeid) {
 			removeInfoAbout();
-			linescontainer.setAttributeNS(null, "opacity", "0.5");
-			nodescontainer.setAttributeNS(null, "opacity", "0.5");
+			svg.classList.add('with-focus')
 
 			currentHighlightedNode.highlight();
 			showmfrinfo(quadid, nodeid);
 		}
 
 		function hoverIn(quadid, nodeid) {
-
 			options.onHoverIn && options.onHoverIn(quadid, nodeid);
 
 			currentHighlightedNode.unhighlight();
@@ -2735,7 +3098,6 @@ var shingle = shingle || (function () {
 		}
 
 		function hoverOut() {
-
 			options.onHoverOut && options.onHoverOut();
 
 			currentHighlightedNode.unhighlight();
