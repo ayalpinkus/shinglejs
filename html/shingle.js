@@ -3223,6 +3223,17 @@ repositionMarkers();
 
 		function addMarker(quadid, nodeid, name, x, y) {
 			if(options.useMarkers) {
+
+				var markers = document.getElementsByClassName( options.markerClass );
+				Array.prototype.forEach.call(markers, function(e) {
+					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
+						return;
+					}
+
+				});
+
+
+
 				var marker = document.createElement("span");
 				marker.setAttribute("class", options.markerClass+" markertype-visited");
 				marker.setAttributeNS(null, 'data-nodeid',nodeid);
