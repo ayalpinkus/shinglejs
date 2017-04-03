@@ -12,6 +12,7 @@ var shingle = shingle || (function () {
 				// commented lines represent other option values
 				useBitmap: false,
 				useMarkers: false,
+				maxNrMarkers: 8,
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
 				enableNULLnameNodes: false,
@@ -161,6 +162,7 @@ var shingle = shingle || (function () {
 			maxScale = 0.5,
 			edgeWidthScale = 1 / 60.0,
 			quadsDrawn = {},
+			markerCount = 0,
 			quadLevels = false,
 			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
@@ -3240,26 +3242,35 @@ repositionMarkers();
 				});
 
 
+				var markerid = "marker-"+markerCount;
+				markerCount = markerCount + 1;
+				if (markerCount == options.maxNrMarkers) {
+					markerCount = 0;
+				}
+				var marker = document.getElementById(markerid);
 
-				var marker = document.createElement("span");
-				marker.setAttribute("class", options.markerClass+" markertype-visited");
+				if (marker == null) {
+					marker = document.createElement("span");
+					marker.setAttribute("class", options.markerClass+" markertype-visited");
+					marker.setAttribute("id", markerid);
+					marker.style.position = "absolute";
+
+					marker.addEventListener('click', function () {
+						changehighlightTo(quadid, nodeid);
+					});
+					markercontainer.appendChild(marker);
+				}
+
 				marker.setAttributeNS(null, 'data-nodeid',nodeid);
-				marker.style.position = "absolute";
 				marker.style.left = "1in";
 				marker.style.top = "1in";
                                 marker.innerHTML = "<span class='markername'>"+name+"</a>";
 
-console.log("input: x,y="+x+", "+y);
+//console.log("input: x,y="+x+", "+y);
 
 				marker.setAttributeNS(null, "data-x", x);
 				marker.setAttributeNS(null, "data-y", y);
-
-				marker.addEventListener('click', function () {
-					changehighlightTo(quadid, nodeid);
-				});
-
 				
-				markercontainer.appendChild(marker);
 				repositionMarkers();
 			}
 		}
