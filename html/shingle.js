@@ -3173,7 +3173,6 @@ repositionMarkers();
 
 //console.log("screen: left,top,right,bottom= "+screenRect.left+", "+screenRect.top+": "+screenRect.right+", "+screenRect.bottom);
 
-
 				x -= worldRect[0];
 				y -= worldRect[1];
 				x /= worldWidth;
@@ -3192,8 +3191,9 @@ repositionMarkers();
 				if (x < 0) { x=0; out=true; }
 				if (y < 0) { y=0; out=true; }
 
-				if (x > screenWidth-e.style.width) { x = screenWidth-e.style.width; out=true; }
-				if (y > screenHeight-e.style.height) { y = screenHeight-e.style.height; out= true; }
+
+				if (x > screenWidth-e.offsetWidth) { x = screenWidth-e.offsetWidth; out=true; }
+				if (y > screenHeight-e.offsetHeight) { y = screenHeight-e.offsetHeight; out= true; }
 
 				if (!out) {
 					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
