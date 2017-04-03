@@ -16,6 +16,7 @@ class QuadNode
 public:
   QuadNode() : splitType(Leaf), splitValue(0), left(NULL), right(NULL), edges(NULL) {quadid[0] = 0;}
   ~QuadNode();
+  int DeleteEdges();
 
   int Contains(double x, double y);
 

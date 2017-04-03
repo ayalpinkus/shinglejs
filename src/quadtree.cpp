@@ -15,13 +15,17 @@ QuadNode::~QuadNode()
   if (left) delete left;
   if (right) delete right;
 
+  DeleteEdges();
+}
+
+int QuadNode::DeleteEdges()
+{
   while (edges)
   {
     LinkedEdges* next = edges->next;
     delete edges;
     edges = next;
   }
-
 }
 
 int QuadNode::Contains(double x, double y)
