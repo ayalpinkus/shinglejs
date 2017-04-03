@@ -3199,6 +3199,10 @@ repositionMarkers();
 					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
 						out=true;
 					}
+
+					if (!currentHighlightedNode.ishighlighted()) { //@@@
+						out=true;
+					}
 				}
 
 
