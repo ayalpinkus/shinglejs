@@ -2260,6 +2260,10 @@ marker.style.top = "1in;"
 				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
 				circle.setAttributeNS(null, "show-name-on-hover", textId);
 
+				circle.setAttributeNS(null, "data-x", x);
+				circle.setAttributeNS(null, "data-y", y);
+
+
 				// dimensions
 				circle.setAttributeNS(null, "cx", "" + x);
 				circle.setAttributeNS(null, "cy", "" + y);
@@ -2317,6 +2321,10 @@ marker.style.top = "1in;"
 				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
 				circle.setAttributeNS(null, "show-name-on-hover", textId);
 
+				circle.setAttributeNS(null, "data-x", x);
+				circle.setAttributeNS(null, "data-y", y);
+
+
 				// dimensions
 				circle.setAttributeNS(null, "x1", "" + x);
 				circle.setAttributeNS(null, "y1", "" + y);
@@ -2368,8 +2376,8 @@ marker.style.top = "1in;"
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
-						addMarker(quadId, nodeId, name);
 						currentnodeid = nodeId;
+						addMarker(quadId, nodeId, name, node.getAttributeNS(null, 'data-x'), node.getAttributeNS(null, 'data-y'));
 						showInfoAbout(quadId, nodeId);
 						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
 					}
@@ -2628,10 +2636,14 @@ marker.style.top = "1in;"
 				setBoundingrectDims();
 				finished && finished();
 			}, 10);
+
+repositionMarkers();
 		}
 
 		function setSvgTranslations() {
+repositionMarkers();
 			translationEl.setAttribute('transform', 'translate(' + currentTranslateX + ' ' + currentTranslateY + ')');
+
 		}
 
 		function doscale(e, done) {
@@ -2777,6 +2789,7 @@ marker.style.top = "1in;"
 		}
 
 		function changehighlightTo(quadid, nodeid) {
+			repositionMarkers();
 			showInfoAbout(quadid, nodeid);
 			var graph = graphs[quadid];
 
@@ -2796,6 +2809,7 @@ marker.style.top = "1in;"
 					{
 						currentTranslateX = -node.x;
 						currentTranslateY = -node.y;
+
 						setSvgTranslations();
 						findQuadsToDraw();
 						findQuadsToRemove();
@@ -3132,14 +3146,95 @@ marker.style.top = "1in;"
 		}
 
 
-		function addMarker(quadid, nodeid, name) {
+		function repositionMarkers() {
+
+//console.log("1.....");
+			var screenRect = getMapRect();
+			var worldRect = containerWorldRect();
+//console.log("2..... screenRect="+screenRect);
+
+                        var screenWidth  = screenRect.right-screenRect.left;
+                        var screenHeight = screenRect.bottom-screenRect.top;
+//console.log("3..... screenwidth,height="+screenWidth+", "+screenHeight);
+
+                        var worldWidth  = worldRect[2]-worldRect[0];
+                        var worldHeight = worldRect[3]-worldRect[1];
+//console.log("4..... worldWidth,worldHeight="+worldWidth+", "+worldHeight);
+
+			var markers = document.getElementsByClassName( options.markerClass );
+//console.log("5.....");
+			Array.prototype.forEach.call(markers, function(e) {
+//console.log("6....."+e.tagName);
+				var x = e.getAttributeNS(null, 'data-x');
+				var y = e.getAttributeNS(null, 'data-y');
+//console.log("data-x,y= "+x+", "+y);
+
+//console.log("world: left,top,right,bottom= "+worldRect[0]+", "+worldRect[1]+": "+worldRect[2]+", "+worldRect[3]);
+
+//console.log("screen: left,top,right,bottom= "+screenRect.left+", "+screenRect.top+": "+screenRect.right+", "+screenRect.bottom);
+
+
+				x -= worldRect[0];
+				y -= worldRect[1];
+				x /= worldWidth;
+				y /= worldHeight;
+				
+//console.log("delta-x,y (should be between 0 and 1)= "+x+", "+y);
+				
+				x*=screenWidth;
+				y*=screenHeight;
+				
+				if (dragging) {
+					x += sfactor*(currentTranslateX - startTranslateX);
+					y += sfactor*(currentTranslateY - startTranslateY);
+				}				
+				var out = false;
+				if (x < 0) { x=0; out=true; }
+				if (y < 0) { y=0; out=true; }
+
+				if (x > screenWidth-e.style.width) { x = screenWidth-e.style.width; out=true; }
+				if (y > screenHeight-e.style.height) { y = screenHeight-e.style.height; out= true; }
+
+				if (!out) {
+					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
+						out=true;
+					}
+				}
+
+
+				e.style.left = x;
+				e.style.top = y;
+
+
+                                if (out) {
+					e.style.display="inherit";
+				}
+				else {
+					e.style.display="none";
+				}
+				
+//console.log("7..... "+x+", "+y);
+
+
+			});
+//console.log("8.....");
+		}
+
+
+		function addMarker(quadid, nodeid, name, x, y) {
 			if(options.useMarkers) {
 				var marker = document.createElement("span");
 				marker.setAttribute("class", options.markerClass+" markertype-visited");
+				marker.setAttributeNS(null, 'data-nodeid',nodeid);
 				marker.style.position = "absolute";
 				marker.style.left = "1in";
 				marker.style.top = "1in";
                                 marker.innerHTML = "<span class='markername'>"+name+"</a>";
+
+console.log("input: x,y="+x+", "+y);
+
+				marker.setAttributeNS(null, "data-x", x);
+				marker.setAttributeNS(null, "data-y", y);
 
 				marker.addEventListener('click', function () {
 					changehighlightTo(quadid, nodeid);
@@ -3147,6 +3242,7 @@ marker.style.top = "1in;"
 
 				
 				markercontainer.appendChild(marker);
+				repositionMarkers();
 			}
 		}
 
