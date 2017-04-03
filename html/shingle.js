@@ -2368,7 +2368,7 @@ marker.style.top = "1in;"
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
-
+						addMarker(quadId, nodeId, name);
 						currentnodeid = nodeId;
 						showInfoAbout(quadId, nodeId);
 						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
@@ -3131,6 +3131,25 @@ marker.style.top = "1in;"
 			currentHighlightedNode.unhighlight();
 		}
 
+
+		function addMarker(quadid, nodeid, name) {
+			if(options.useMarkers) {
+				var marker = document.createElement("span");
+				marker.setAttribute("class", options.markerClass+" markertype-visited");
+				marker.style.position = "absolute";
+				marker.style.left = "1in";
+				marker.style.top = "1in";
+                                marker.innerHTML = "<span class='markername'>"+name+"</a>";
+
+				marker.addEventListener('click', function () {
+					changehighlightTo(quadid, nodeid);
+				});
+
+				
+				markercontainer.appendChild(marker);
+			}
+		}
+
 		function init() {
 
 			var shinglecontainer = options.el;
@@ -3150,10 +3169,6 @@ marker.style.top = "1in;"
 			shinglecontainer.appendChild(mfrmap);
 
 
-
-
-
-
 			if(options.useMarkers) {
 				markercontainer = document.createElement("div");
 				markercontainer.setAttribute("class", options.markercontainerClass);
@@ -3167,14 +3182,6 @@ marker.style.top = "1in;"
 
 				markercontainer.style.width = options.width;
 				markercontainer.style.height = options.height;
-
-				var marker = document.createElement("span");
-				marker.setAttribute("class", options.markerClass);
-marker.style.position = "absolute";
-marker.style.left = "1in";
-marker.style.top = "1in";
-                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir. <a href='http://google.com/'>en een link</a>"
-				markercontainer.appendChild(marker);
  
 				shinglecontainer.appendChild(markercontainer);
 			}
