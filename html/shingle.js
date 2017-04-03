@@ -2641,8 +2641,9 @@ repositionMarkers();
 		}
 
 		function setSvgTranslations() {
-repositionMarkers();
 			translationEl.setAttribute('transform', 'translate(' + currentTranslateX + ' ' + currentTranslateY + ')');
+				setBoundingrectDims();
+repositionMarkers();
 
 		}
 
@@ -3183,10 +3184,12 @@ repositionMarkers();
 				x*=screenWidth;
 				y*=screenHeight;
 				
+/*
 				if (dragging) {
 					x += sfactor*(currentTranslateX - startTranslateX);
 					y += sfactor*(currentTranslateY - startTranslateY);
 				}				
+*/
 				var out = false;
 				if (x < 0) { x=0; out=true; }
 				if (y < 0) { y=0; out=true; }
