@@ -3173,7 +3173,7 @@ marker.style.top = "1in;"
 marker.style.position = "absolute";
 marker.style.left = "1in";
 marker.style.top = "1in";
-                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir. <a href='http://www.ayalpinkus.nl/'>en een link</a>"
+                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir. <a href='http://google.com/'>en een link</a>"
 				markercontainer.appendChild(marker);
  
 				shinglecontainer.appendChild(markercontainer);
