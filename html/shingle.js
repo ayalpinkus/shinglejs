@@ -11,6 +11,7 @@ var shingle = shingle || (function () {
 				// these are equal to the possible settings
 				// commented lines represent other option values
 				useBitmap: false,
+				useMarkers: false,
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
 				enableNULLnameNodes: false,
@@ -40,6 +41,8 @@ var shingle = shingle || (function () {
 				translationElClass: 'shingle-translation',
 				boundingRectElClass: 'shingle-bounding-rect',
 				bitmapcontainerClass: 'shingle-bitmap-container',
+				markercontainerClass: 'shingle-marker-container',
+				markerClass: 'shingle-marker',
 				linescontainerClass: 'shingle-lines-container',
 				highlightedlinescontainerClass: 'shingle-highlighted-lines-container',
 				nodescontainerClass: 'shingle-nodes-container',
@@ -162,7 +165,7 @@ var shingle = shingle || (function () {
 			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
 			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
-			linescontainer, nodescontainer, bitmapcontainer, 
+			linescontainer, nodescontainer, bitmapcontainer, markercontainer,  
 			scalingEl, translationEl,
 			startTranslateX = 0, startTranslateY = 0,
 			dragging = false,
@@ -1644,8 +1647,33 @@ var shingle = shingle || (function () {
 			if(options.selectNodes) {
 				addNodeEvents(highlightednodescontainer);
 			}
-
 			mfrmap.appendChild(svg);
+/*
+			if(options.useMarkers) {
+				markercontainer = document.createElementNS(xmlns, "div");
+				markercontainer.setAttributeNS(null, "class", options.markercontainerClass);
+
+				markercontainer.setAttributeNS(null, "width", "5in");
+				markercontainer.setAttributeNS(null, "height", "3in");
+	
+				markercontainer.setAttributeNS(null, "position", "absolute");
+				markercontainer.setAttributeNS(null, "x", "0");
+				markercontainer.setAttributeNS(null, "y", "0");
+
+				markercontainer.style.overflow = "visible";
+
+
+				var marker = document.createElementNS(xmlns, "span");
+				marker.setAttributeNS(null, "class", options.markerClass);
+marker.style.position = "absolute";
+marker.style.left = "1in;"
+marker.style.top = "1in;"
+                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir."
+				markercontainer.appendChild(marker);
+ 
+				mfrmap.appendChild(markercontainer);
+			}
+*/
 		}
 
 		function clearNodeNames(){
@@ -3120,6 +3148,43 @@ var shingle = shingle || (function () {
 
 			mfrmap = document.createElement("div");
 			shinglecontainer.appendChild(mfrmap);
+
+
+
+
+
+
+			if(options.useMarkers) {
+				markercontainer = document.createElement("div");
+				markercontainer.setAttribute("class", options.markercontainerClass);
+
+				markercontainer.setAttribute("width", "5in");
+				markercontainer.setAttribute("height", "3in");
+	
+				markercontainer.setAttribute("position", "absolute");
+				markercontainer.setAttribute("x", "0");
+				markercontainer.setAttribute("y", "0");
+
+				markercontainer.style.width = options.width;
+				markercontainer.style.height = options.height;
+
+				var marker = document.createElement("span");
+				marker.setAttribute("class", options.markerClass);
+marker.style.position = "absolute";
+marker.style.left = "1in";
+marker.style.top = "1in";
+                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir. <a href='http://www.ayalpinkus.nl/'>en een link</a>"
+				markercontainer.appendChild(marker);
+ 
+				shinglecontainer.appendChild(markercontainer);
+			}
+
+
+
+
+
+
+
 
 			zoom = document.createElement("input");
 

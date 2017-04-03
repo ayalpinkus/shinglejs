@@ -18,6 +18,14 @@
   top:0in;
 }
 
+.shingle-shingle-marker-container {
+  overflow:visible;
+  position:absolute; 
+  left:0in;
+  top:0in;
+  z-index:90;
+}
+
 .shingle-zoom {
   position:absolute;
   left:0.25in;
