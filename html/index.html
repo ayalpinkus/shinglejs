@@ -14,7 +14,7 @@
         <h2>Publish large interactive graphs online</h2>
       </center>
     </div>
-    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-node-field="nodenumber"       use-bitmap="true" ></div>
+    <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="random-graph_500000/" data-node-field="nodenumber" ></div>
     <!-- with use of the node mapServer.js
     <div id="shinglecontainer" data-width="100%" data-height="6in" data-graph-path="data-graph-path="http://127.0.0.1:8088/shinglejs/random-graph_500000/"/" data-node-field="nodenumber" ></div>
     -->
@@ -307,6 +307,8 @@ This distribution comes with one example graph, 'sampledata/random-graph_500000.
       nodeRadiusScaleFactor : 1/200.0,
       nodeRadiusScalePower: 0.75,
       initialZoom : 2,
+      useBitmap:true,
+      useMarkers:true,
 
       onClear: function() {
         //
