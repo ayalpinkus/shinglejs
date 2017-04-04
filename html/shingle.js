@@ -1474,6 +1474,10 @@ var shingle = shingle || (function () {
 						handleMouseUp(evt);
 					}, false);
 
+					mfrmap.addEventListener('mouseleave', function (evt) {
+						handleMouseUp(evt);
+					}, false);
+
 					mfrmap.addEventListener('touchstart', function (evt) {
 						var touchobj = evt.changedTouches[0];
 						handleMouseDown(touchobj);
