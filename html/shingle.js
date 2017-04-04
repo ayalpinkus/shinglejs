@@ -3151,47 +3151,31 @@ repositionMarkers();
 
 		function repositionMarkers() {
 
-//console.log("1.....");
 			var screenRect = getMapRect();
 			var worldRect = containerWorldRect();
-//console.log("2..... screenRect="+screenRect);
 
                         var screenWidth  = screenRect.right-screenRect.left;
                         var screenHeight = screenRect.bottom-screenRect.top;
-//console.log("3..... screenwidth,height="+screenWidth+", "+screenHeight);
 
                         var worldWidth  = worldRect[2]-worldRect[0];
                         var worldHeight = worldRect[3]-worldRect[1];
-//console.log("4..... worldWidth,worldHeight="+worldWidth+", "+worldHeight);
 
 			var markers = document.getElementsByClassName( options.markerClass );
-//console.log("5.....");
+
 			Array.prototype.forEach.call(markers, function(e) {
-//console.log("6....."+e.tagName);
+
 				var x = e.getAttributeNS(null, 'data-x');
 				var y = e.getAttributeNS(null, 'data-y');
-//console.log("data-x,y= "+x+", "+y);
 
-//console.log("world: left,top,right,bottom= "+worldRect[0]+", "+worldRect[1]+": "+worldRect[2]+", "+worldRect[3]);
-
-//console.log("screen: left,top,right,bottom= "+screenRect.left+", "+screenRect.top+": "+screenRect.right+", "+screenRect.bottom);
 
 				x -= worldRect[0];
 				y -= worldRect[1];
 				x /= worldWidth;
 				y /= worldHeight;
 				
-//console.log("delta-x,y (should be between 0 and 1)= "+x+", "+y);
-				
 				x*=screenWidth;
 				y*=screenHeight;
 				
-/*
-				if (dragging) {
-					x += sfactor*(currentTranslateX - startTranslateX);
-					y += sfactor*(currentTranslateY - startTranslateY);
-				}				
-*/
 				var out = false;
 				if (x < 0) { x=0; out=true; }
 				if (y < 0) { y=0; out=true; }
