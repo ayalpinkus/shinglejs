@@ -197,7 +197,10 @@ var shingle = shingle || (function () {
 			nodeScaleTimer = false,
 			quadsCache = {},
 			dragCoordinates = { x: false, y: false },
-			origin = location.origin || (location.protocol + "//" + location.hostname + (location.port ? ':' + location.port: ''));
+			origin = location.origin || (location.protocol + "//" + location.hostname + (location.port ? ':' + location.port: '')),
+			scaleX = null, scaleY = null,
+			navrect = null, setNavRect = null,
+			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200;
 
 		// defaults
 		function initDefaults() {
@@ -783,8 +786,8 @@ var shingle = shingle || (function () {
 			var datarectPixels = getBoundingrectDims(),
 				containerRectPixels = getMapRect();
 
-			var scaleX = ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]) / (datarectPixels.right - datarectPixels.left),
-				scaleY = ((1.0 * mapinfo["quadtree"]["ymax"]) - mapinfo["quadtree"]["ymin"]) / (datarectPixels.bottom - datarectPixels.top);
+			scaleX = ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]) / (datarectPixels.right - datarectPixels.left),
+			scaleY = ((1.0 * mapinfo["quadtree"]["ymax"]) - mapinfo["quadtree"]["ymin"]) / (datarectPixels.bottom - datarectPixels.top);
 
 			var containerWidth = (containerRectPixels.right - containerRectPixels.left) * scaleX,
 				containerHeight = (containerRectPixels.bottom - containerRectPixels.top) * scaleY;
@@ -854,11 +857,76 @@ var shingle = shingle || (function () {
 			});
 		}
 
+		function mapLoaded(callback) {
+			var wait = true;
+		    if(mapinfo && mapinfo["quadtree"] && typeof scalingEl != "undefined" && typeof translationEl != "undefined") {
+				wait = false;
+		        callback();
+		    }
+		    if(wait) {
+		    	var self = this;
+		    	if(mapLoadTries < mapLoadMaxTries) {
+		    		mapLoadTries++;
+			        setTimeout(function(){
+			            mapLoaded(callback);
+			        }, mapLoadWaitMsec);
+		    	} else {
+		    		this.log('Map not loaded after ' + mapLoadTries + ' attempts');
+		    	}
+		    }
+		}
+
+		function setSelection(dimensions) {
+
+			mapLoaded(function() {
+				if(!navrect) {
+					navrect = document.createElementNS(xmlns, "rect");
+					translationEl.appendChild(navrect);
+					navrect.setAttributeNS(null, "fill", 'none');
+					navrect.setAttributeNS(null, "stroke", '#323232');
+				}
+				var width = (mapinfo["quadtree"]["xmax"] - mapinfo["quadtree"]["xmin"]),
+					height = (mapinfo["quadtree"]["ymax"] - mapinfo["quadtree"]["ymin"]);
+
+				navrect.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"]));
+				navrect.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"]));
+				navrect.setAttributeNS(null, "width", "" + (width * dimensions.width));
+				navrect.setAttributeNS(null, "height", "" + (height * dimensions.height));
+				navrect.setAttributeNS(null, "stroke-width", "" + Math.max(Math.min(Math.max(dimensions.width, dimensions.height), 2 / scaleX), 1 / scaleX) + "em");
+			});
+		}
+
 		function findQuadsToDraw() {
 
 			var screenrect = containerWorldRect(),
 				root = mapinfo["quadtree"],
 				quadid = "quad_";
+
+			if(options.onMapViewChanged) {
+				var mapTop = mapinfo["quadtree"]["ymin"],
+					mapRight = mapinfo["quadtree"]["xmax"],
+					mapBottom = mapinfo["quadtree"]["ymax"],
+					mapLeft = mapinfo["quadtree"]["xmin"],
+					mapWidth = mapRight - mapLeft,
+					mapHeight = mapBottom - mapTop,
+					viewTop = screenrect[1],
+					viewRight = screenrect[2],
+					viewBottom = screenrect[3],
+					viewLeft = screenrect[0],
+					viewWidth = viewRight - viewLeft,
+					viewHeight = viewBottom - viewTop;
+
+				var viewX = viewLeft - mapLeft,
+					viewY = viewTop - mapTop;
+
+				// return view on the map in the viewport, in percentages
+				options.onMapViewChanged({
+					x: Math.min(Math.max(viewX / mapWidth, 0), 1),
+					y: Math.min(Math.max(viewY / mapHeight, 0), 1),
+					width: Math.min(viewWidth / mapWidth, 1),
+					height: Math.min(viewHeight / mapHeight, 1)
+				});
+			}
 
 			if(mapinfo.loadFromBackend) {
 				findQuadsNodeJs(screenrect);
@@ -3382,7 +3450,8 @@ repositionMarkers();
 			changehighlightTo: changehighlightTo,
 			zoomIn: zoomIn,
 			zoomOut: zoomOut,
-			zoomReset: zoomReset
+			zoomReset: zoomReset,
+			setSelection: setSelection
 		};
 
 	}, newGraph = function (settings) {
