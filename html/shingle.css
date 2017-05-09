@@ -26,6 +26,11 @@
   z-index:90;
 }
 
+.shingle-bitmap-container {
+  transition: opacity 1s;
+  transition-timing-function: linear;
+}
+
 .shingle-marker
 {
 /*
