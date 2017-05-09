@@ -11,6 +11,8 @@ var shingle = shingle || (function () {
 				// these are equal to the possible settings
 				// commented lines represent other option values
 				useBitmap: false,
+				useMarkers: false,
+				maxNrMarkers: 8,
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
 				enableNULLnameNodes: false,
@@ -40,6 +42,8 @@ var shingle = shingle || (function () {
 				translationElClass: 'shingle-translation',
 				boundingRectElClass: 'shingle-bounding-rect',
 				bitmapcontainerClass: 'shingle-bitmap-container',
+				markercontainerClass: 'shingle-marker-container',
+				markerClass: 'shingle-marker',
 				linescontainerClass: 'shingle-lines-container',
 				highlightedlinescontainerClass: 'shingle-highlighted-lines-container',
 				nodescontainerClass: 'shingle-nodes-container',
@@ -158,11 +162,12 @@ var shingle = shingle || (function () {
 			maxScale = 0.5,
 			edgeWidthScale = 1 / 60.0,
 			quadsDrawn = {},
+			markerCount = 0,
 			quadLevels = false,
 			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
 			highlightedlinescontainer, highlightednodescontainer, highlightednamescontainer,
-			linescontainer, nodescontainer, bitmapcontainer, 
+			linescontainer, nodescontainer, bitmapcontainer, markercontainer,  
 			scalingEl, translationEl,
 			startTranslateX = 0, startTranslateY = 0,
 			dragging = false,
@@ -1469,6 +1474,10 @@ var shingle = shingle || (function () {
 						handleMouseUp(evt);
 					}, false);
 
+					mfrmap.addEventListener('mouseleave', function (evt) {
+						handleMouseUp(evt);
+					}, false);
+
 					mfrmap.addEventListener('touchstart', function (evt) {
 						var touchobj = evt.changedTouches[0];
 						handleMouseDown(touchobj);
@@ -1644,8 +1653,33 @@ var shingle = shingle || (function () {
 			if(options.selectNodes) {
 				addNodeEvents(highlightednodescontainer);
 			}
-
 			mfrmap.appendChild(svg);
+/*
+			if(options.useMarkers) {
+				markercontainer = document.createElementNS(xmlns, "div");
+				markercontainer.setAttributeNS(null, "class", options.markercontainerClass);
+
+				markercontainer.setAttributeNS(null, "width", "5in");
+				markercontainer.setAttributeNS(null, "height", "3in");
+	
+				markercontainer.setAttributeNS(null, "position", "absolute");
+				markercontainer.setAttributeNS(null, "x", "0");
+				markercontainer.setAttributeNS(null, "y", "0");
+
+				markercontainer.style.overflow = "visible";
+
+
+				var marker = document.createElementNS(xmlns, "span");
+				marker.setAttributeNS(null, "class", options.markerClass);
+marker.style.position = "absolute";
+marker.style.left = "1in;"
+marker.style.top = "1in;"
+                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir."
+				markercontainer.appendChild(marker);
+ 
+				mfrmap.appendChild(markercontainer);
+			}
+*/
 		}
 
 		function clearNodeNames(){
@@ -2232,6 +2266,10 @@ var shingle = shingle || (function () {
 				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
 				circle.setAttributeNS(null, "show-name-on-hover", textId);
 
+				circle.setAttributeNS(null, "data-x", x);
+				circle.setAttributeNS(null, "data-y", y);
+
+
 				// dimensions
 				circle.setAttributeNS(null, "cx", "" + x);
 				circle.setAttributeNS(null, "cy", "" + y);
@@ -2289,6 +2327,10 @@ var shingle = shingle || (function () {
 				circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
 				circle.setAttributeNS(null, "show-name-on-hover", textId);
 
+				circle.setAttributeNS(null, "data-x", x);
+				circle.setAttributeNS(null, "data-y", y);
+
+
 				// dimensions
 				circle.setAttributeNS(null, "x1", "" + x);
 				circle.setAttributeNS(null, "y1", "" + y);
@@ -2340,8 +2382,8 @@ var shingle = shingle || (function () {
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
-
 						currentnodeid = nodeId;
+						addMarker(quadId, nodeId, name, node.getAttributeNS(null, 'data-x'), node.getAttributeNS(null, 'data-y'));
 						showInfoAbout(quadId, nodeId);
 						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
 					}
@@ -2600,10 +2642,15 @@ var shingle = shingle || (function () {
 				setBoundingrectDims();
 				finished && finished();
 			}, 10);
+
+repositionMarkers();
 		}
 
 		function setSvgTranslations() {
 			translationEl.setAttribute('transform', 'translate(' + currentTranslateX + ' ' + currentTranslateY + ')');
+				setBoundingrectDims();
+repositionMarkers();
+
 		}
 
 		function doscale(e, done) {
@@ -2749,6 +2796,7 @@ var shingle = shingle || (function () {
 		}
 
 		function changehighlightTo(quadid, nodeid) {
+			repositionMarkers();
 			showInfoAbout(quadid, nodeid);
 			var graph = graphs[quadid];
 
@@ -2768,6 +2816,7 @@ var shingle = shingle || (function () {
 					{
 						currentTranslateX = -node.x;
 						currentTranslateY = -node.y;
+
 						setSvgTranslations();
 						findQuadsToDraw();
 						findQuadsToRemove();
@@ -3103,6 +3152,117 @@ var shingle = shingle || (function () {
 			currentHighlightedNode.unhighlight();
 		}
 
+
+		function repositionMarkers() {
+
+			var screenRect = getMapRect();
+			var worldRect = containerWorldRect();
+
+                        var screenWidth  = screenRect.right-screenRect.left;
+                        var screenHeight = screenRect.bottom-screenRect.top;
+
+                        var worldWidth  = worldRect[2]-worldRect[0];
+                        var worldHeight = worldRect[3]-worldRect[1];
+
+			var markers = document.getElementsByClassName( options.markerClass );
+
+			Array.prototype.forEach.call(markers, function(e) {
+
+				var x = e.getAttributeNS(null, 'data-x');
+				var y = e.getAttributeNS(null, 'data-y');
+
+
+				x -= worldRect[0];
+				y -= worldRect[1];
+				x /= worldWidth;
+				y /= worldHeight;
+				
+				x*=screenWidth;
+				y*=screenHeight;
+				
+				var out = false;
+				if (x < 0) { x=0; out=true; }
+				if (y < 0) { y=0; out=true; }
+
+
+				if (x > screenWidth-e.offsetWidth) { x = screenWidth-e.offsetWidth; out=true; }
+				if (y > screenHeight-e.offsetHeight) { y = screenHeight-e.offsetHeight; out= true; }
+
+				if (!out) {
+					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
+						out=true;
+					}
+
+					if (!currentHighlightedNode.ishighlighted()) { //@@@
+						out=true;
+					}
+				}
+
+
+				e.style.left = x;
+				e.style.top = y;
+
+
+                                if (out) {
+					e.style.display="inherit";
+				}
+				else {
+					e.style.display="none";
+				}
+				
+//console.log("7..... "+x+", "+y);
+
+
+			});
+//console.log("8.....");
+		}
+
+
+		function addMarker(quadid, nodeid, name, x, y) {
+			if(options.useMarkers) {
+
+				var markers = document.getElementsByClassName( options.markerClass );
+				Array.prototype.forEach.call(markers, function(e) {
+					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
+						return;
+					}
+
+				});
+
+
+				var markerid = "marker-"+markerCount;
+				markerCount = markerCount + 1;
+				if (markerCount == options.maxNrMarkers) {
+					markerCount = 0;
+				}
+				var marker = document.getElementById(markerid);
+
+				if (marker == null) {
+					marker = document.createElement("span");
+					marker.setAttribute("class", options.markerClass+" markertype-visited");
+					marker.setAttribute("id", markerid);
+					marker.style.position = "absolute";
+
+					marker.addEventListener('click', function () {
+						changehighlightTo(quadid, nodeid);
+					});
+					markercontainer.appendChild(marker);
+				}
+
+				marker.setAttributeNS(null, 'data-nodeid',nodeid);
+				marker.style.left = "1in";
+				marker.style.top = "1in";
+                                marker.innerHTML = "<span class='markername'>"+name+"</a>";
+
+//console.log("input: x,y="+x+", "+y);
+
+				marker.setAttributeNS(null, "data-x", x);
+				marker.setAttributeNS(null, "data-y", y);
+				
+				repositionMarkers();
+			}
+		}
+
 		function init() {
 
 			var shinglecontainer = options.el;
@@ -3120,6 +3280,31 @@ var shingle = shingle || (function () {
 
 			mfrmap = document.createElement("div");
 			shinglecontainer.appendChild(mfrmap);
+
+
+			if(options.useMarkers) {
+				markercontainer = document.createElement("div");
+				markercontainer.setAttribute("class", options.markercontainerClass);
+
+				markercontainer.setAttribute("width", "5in");
+				markercontainer.setAttribute("height", "3in");
+	
+				markercontainer.setAttribute("position", "absolute");
+				markercontainer.setAttribute("x", "0");
+				markercontainer.setAttribute("y", "0");
+
+				markercontainer.style.width = options.width;
+				markercontainer.style.height = options.height;
+ 
+				shinglecontainer.appendChild(markercontainer);
+			}
+
+
+
+
+
+
+
 
 			zoom = document.createElement("input");
 
