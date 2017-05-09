@@ -2450,7 +2450,7 @@ marker.style.top = "1in;"
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
-						currentnodeid = nodeId;
+
 						addMarker(quadId, nodeId, name, node.getAttributeNS(null, 'data-x'), node.getAttributeNS(null, 'data-y'));
 						showInfoAbout(quadId, nodeId);
 						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
@@ -2864,8 +2864,13 @@ repositionMarkers();
 		}
 
 		function changehighlightTo(quadid, nodeid) {
+
+
 			repositionMarkers();
 			showInfoAbout(quadid, nodeid);
+
+			if(!quadid || !nodeid) return;
+
 			var graph = graphs[quadid];
 
 			if (graph) {
@@ -3178,6 +3183,8 @@ repositionMarkers();
 		function removeInfoAbout() {
 
 			if(currentHighlightedNode.ishighlighted()) {
+
+				currentnodeid = null;
 				textRects = [];
 
 				svg.classList.remove('with-focus');
@@ -3200,8 +3207,12 @@ repositionMarkers();
 
 		function showInfoAbout(quadid, nodeid) {
 			removeInfoAbout();
+			if(!quadid || !nodeid) return;	
+
 			svg.classList.add('with-focus')
 
+			currentHighlightedNode.sethighlighted(quadid, nodeid);
+			currentnodeid = nodeid;
 			currentHighlightedNode.highlight();
 			showmfrinfo(quadid, nodeid);
 		}
@@ -3451,7 +3462,8 @@ repositionMarkers();
 			zoomIn: zoomIn,
 			zoomOut: zoomOut,
 			zoomReset: zoomReset,
-			setSelection: setSelection
+			setSelection: setSelection,
+			currentNodeId: function() { return currentnodeid; }
 		};
 
 	}, newGraph = function (settings) {
