@@ -13,6 +13,9 @@ var shingle = shingle || (function () {
 				useBitmap: false,
 				useMarkers: false,
 				maxNrMarkers: 8,
+				// use in cases where other elements may overlap the graph
+				// e.g. markerOffsets: { top: 10, right: 10, bottom: 0, left: 10 }
+				markerOffsets: null,
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
 				enableNULLnameNodes: false,
@@ -51,6 +54,8 @@ var shingle = shingle || (function () {
 				highlightednamescontainerClass: 'shingle-highlighted-names-container',
 				nodeClass: 'shingle-node',
 				nodeTextClass: 'shingle-node-text',
+				clickableClass: 'shingle-clickable',
+				visitedNodeTextClass: 'shingle-visited-node-text',
 				highlightedNodeClass: 'shingle-node-highlighted',
 				highlightedNodeTextClass: 'shingle-node-h-text',
 				mapClass: 'shingle-map',
@@ -200,7 +205,10 @@ var shingle = shingle || (function () {
 			origin = location.origin || (location.protocol + "//" + location.hostname + (location.port ? ':' + location.port: '')),
 			scaleX = null, scaleY = null,
 			navrect = null, setNavRect = null,
-			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200;
+			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200,
+			doRepositionMarkers = null,
+			visitedNodes = [];
+
 
 		// defaults
 		function initDefaults() {
@@ -1720,43 +1728,35 @@ var shingle = shingle || (function () {
 			translationEl.appendChild(highlightednodescontainer);
 			if(options.selectNodes) {
 				addNodeEvents(highlightednodescontainer);
+				addTextEvents(highlightednamescontainer);
 			}
 			mfrmap.appendChild(svg);
-/*
-			if(options.useMarkers) {
-				markercontainer = document.createElementNS(xmlns, "div");
-				markercontainer.setAttributeNS(null, "class", options.markercontainerClass);
-
-				markercontainer.setAttributeNS(null, "width", "5in");
-				markercontainer.setAttributeNS(null, "height", "3in");
-	
-				markercontainer.setAttributeNS(null, "position", "absolute");
-				markercontainer.setAttributeNS(null, "x", "0");
-				markercontainer.setAttributeNS(null, "y", "0");
-
-				markercontainer.style.overflow = "visible";
-
-
-				var marker = document.createElementNS(xmlns, "span");
-				marker.setAttributeNS(null, "class", options.markerClass);
-marker.style.position = "absolute";
-marker.style.left = "1in;"
-marker.style.top = "1in;"
-                                marker.innerHTML = "Mr. Prof. Drs. PhD Sir."
-				markercontainer.appendChild(marker);
- 
-				mfrmap.appendChild(markercontainer);
-			}
-*/
 		}
+
+
 
 		function clearNodeNames(){
 			if (highlightednamescontainer == null) {
 				return;
 			}
 
-			while (highlightednamescontainer.firstChild) {
-				highlightednamescontainer.removeChild(highlightednamescontainer.firstChild);
+			if(options.useMarkers) {
+				var i = textRects.length;
+				while (i--) {
+					var textRect = textRects[i];
+					if(visitedNodes.indexOf(textRect.node.nodeid) == -1) {
+						highlightednamescontainer.removeChild(textRect.field);
+						textRects.splice(i, 1);
+					} else {
+						var fieldClassName = textRect.field.getAttributeNS(null, "class") + ' ' + options.visitedNodeTextClass;
+						textRect.field.setAttributeNS(null, "class", fieldClassName);
+					}
+				}
+			} else {
+				textRects = [];
+				while (highlightednamescontainer.firstChild) {
+					highlightednamescontainer.removeChild(highlightednamescontainer.firstChild);
+				}
 			}
 		}
 
@@ -2097,34 +2097,39 @@ marker.style.top = "1in;"
 					}
 
 					textfield = document.createElementNS(xmlns, "text");
-					textfield.setAttributeNS(null, "class", options.nodeTextClass + " shingle-unselectable");
 					textfield.setAttributeNS(null, "id", elemid);
 					textfield.setAttributeNS(null, "fill", rgbA(options.fontColor));
 					textfield.setAttributeNS(null, "font-family", options.fontFamily);
 					textfield.setAttributeNS(null, "font-size", size);
 					textfield.setAttributeNS(null, "data-nodeid", "");
+					textfield.setAttributeNS(null, "data-name", node.name);
 
 					highlightednamescontainer.appendChild(textfield);
-				}
 
 				var x = node.x,
 					y = node.y,
 					textRect = getTextRect(textfield, node, onHoverOnly, size, nodeOffSets);
+					textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
+					textfield.setAttributeNS(null, "data-quadid", quadid);
+					textfield.setAttributeNS(null, "x", textRect.left);
+					textfield.setAttributeNS(null, "y", textRect.top);
 
-				textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
-				textfield.setAttributeNS(null, "x", textRect.left);
-				textfield.setAttributeNS(null, "y", textRect.top);
+					// optionally let caller manipulate node name
+					if(options.setNodeName) node.name = options.setNodeName(node);
 
-				// optionally let caller manipulate node name
-				if(options.setNodeName) node.name = options.setNodeName(node);
+					textfield.textContent = node.name;
 
-				textfield.textContent = node.name;
+					// anti collision for display / hide text
+					textRect = positionTextRect(textRect);
 
-				// anti collision for display / hide text
-				textRect = positionTextRect(textRect);
-
-				// remember the textRect's belonging to the node text labels
-				textRects.push(textRect);
+					// remember the textRect's belonging to the node text labels
+					textRects.push(textRect);
+				}
+				var fieldClassName = options.nodeTextClass + ' shingle-unselectable';
+				if(options.useMarkers) {
+					fieldClassName += ' ' + options.clickableClass;
+				}
+				textfield.setAttributeNS(null, "class", fieldClassName);
 			}
 
 			return elemid;
@@ -2451,7 +2456,6 @@ marker.style.top = "1in;"
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
 
-						addMarker(quadId, nodeId, name, node.getAttributeNS(null, 'data-x'), node.getAttributeNS(null, 'data-y'));
 						showInfoAbout(quadId, nodeId);
 						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
 					}
@@ -2531,6 +2535,66 @@ marker.style.top = "1in;"
 			}
 		}
 
+		function addTextEvents(container) {
+			container.addEventListener('mousedown', function (e) {
+				var text = e.target;
+				if(text) {
+					e.cancelBubble = true;
+
+					var name = text.getAttribute('data-name');
+
+					if(name) {
+						var nodeId = text.getAttribute('data-nodeid'),
+							quadId = text.getAttribute('data-quadid');
+
+						showInfoAbout(quadId, nodeId);
+						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
+					}
+				}
+			});
+			container.addEventListener('mouseup', function (e) {
+				var text = e.target;
+
+				if(text) e.cancelBubble = true;
+			});
+
+			var hoverAction = false;
+
+			if('ontouchstart' in document.documentElement) {
+				container.addEventListener('touchstart', function (evt) {
+					var e = evt.changedTouches[0],
+						text = e.target;
+					if(text) {
+						var quadId = text.getAttribute('data-quadid'),
+							nodeId = text.getAttribute('data-nodeid');
+
+						showInfoAbout(quadId, nodeId);
+						evt.preventDefault();
+						evt.cancelBubble = true;
+						options.onNodeClick && options.onNodeClick(quadId, nodeId, currentScaleStep);
+					}
+				});
+
+				container.addEventListener('touchmove', function (evt) {
+					var e = evt.changedTouches[0],
+						text = e.target;
+					if(text) {
+						evt.preventDefault();
+						evt.cancelBubble = true;
+					}
+				});
+
+				container.addEventListener('touchend', function (evt) {
+					var e = evt.changedTouches[0],
+						text = e.target;
+					if(text) {
+						evt.preventDefault();
+						evt.cancelBubble = true;
+					}
+				});
+			}
+		}
+
 		function appendSvgDOM(quadid) {
 
 			if(!graphs[quadid] || !graphs[quadid]["nodes"]) return;
@@ -2543,13 +2607,6 @@ marker.style.top = "1in;"
 			}
 
 			graph.els = graph.els || { glin: null, gnod: null };
-
-/*
-			var xmin = mapinfo["quadtree"]["xmin"],
-				xmax = mapinfo["quadtree"]["xmax"],
-				ymin = mapinfo["quadtree"]["ymin"],
-				ymax = mapinfo["quadtree"]["ymax"],
-*/
 
 			var glin;
 
@@ -2709,16 +2766,14 @@ marker.style.top = "1in;"
 			setTimeout(function() {
 				setBoundingrectDims();
 				finished && finished();
+				repositionMarkers();
 			}, 10);
-
-repositionMarkers();
 		}
 
 		function setSvgTranslations() {
 			translationEl.setAttribute('transform', 'translate(' + currentTranslateX + ' ' + currentTranslateY + ')');
-				setBoundingrectDims();
-repositionMarkers();
-
+			setBoundingrectDims();
+			repositionMarkers();
 		}
 
 		function doscale(e, done) {
@@ -2866,8 +2921,8 @@ repositionMarkers();
 		function changehighlightTo(quadid, nodeid) {
 
 
-			repositionMarkers();
 			showInfoAbout(quadid, nodeid);
+			repositionMarkers();
 
 			if(!quadid || !nodeid) return;
 
@@ -3180,13 +3235,12 @@ repositionMarkers();
 			highlightScheduler.addTask(last_async_showmfrinfo);
 		}
 
+
 		function removeInfoAbout() {
 
 			if(currentHighlightedNode.ishighlighted()) {
 
 				currentnodeid = null;
-				textRects = [];
-
 				svg.classList.remove('with-focus');
 
 				currentHighlightedNode.unhighlight();
@@ -3215,6 +3269,8 @@ repositionMarkers();
 			currentnodeid = nodeid;
 			currentHighlightedNode.highlight();
 			showmfrinfo(quadid, nodeid);
+
+			addMarker(quadid, nodeid);
 		}
 
 		function hoverIn(quadid, nodeid) {
@@ -3231,113 +3287,126 @@ repositionMarkers();
 			currentHighlightedNode.unhighlight();
 		}
 
+		function setMarkerOffsets(offSets) {
+			options.markerOffsets = offSets;
+			repositionMarkers();
+		}
 
 		function repositionMarkers() {
 
-			var screenRect = getMapRect();
-			var worldRect = containerWorldRect();
+			if(options.staticMap) return ;
 
-                        var screenWidth  = screenRect.right-screenRect.left;
-                        var screenHeight = screenRect.bottom-screenRect.top;
+			clearTimeout(doRepositionMarkers);
 
-                        var worldWidth  = worldRect[2]-worldRect[0];
-                        var worldHeight = worldRect[3]-worldRect[1];
+			doRepositionMarkers = setTimeout(function() {
 
-			var markers = document.getElementsByClassName( options.markerClass );
+				var screenRect = getMapRect();
+				var worldRect = containerWorldRect();
 
-			Array.prototype.forEach.call(markers, function(e) {
+	            var screenWidth  = screenRect.right-screenRect.left;
+	            var screenHeight = screenRect.bottom-screenRect.top;
 
-				var x = e.getAttributeNS(null, 'data-x');
-				var y = e.getAttributeNS(null, 'data-y');
+	            var worldWidth  = worldRect[2]-worldRect[0];
+	            var worldHeight = worldRect[3]-worldRect[1];
+
+				var markers = document.getElementsByClassName( options.markerClass );
+
+				var offSets = options.markerOffsets || {};
+				offSets.top = offSets.top || 0;
+				offSets.right = offSets.right || 0;
+				offSets.bottom = offSets.bottom || 0;
+				offSets.left = offSets.left || 0;
+
+				Array.prototype.forEach.call(markers, function(markerEl) {
+
+					var x = markerEl.getAttribute('data-x');
+					var y = markerEl.getAttribute('data-y');
 
 
-				x -= worldRect[0];
-				y -= worldRect[1];
-				x /= worldWidth;
-				y /= worldHeight;
-				
-				x*=screenWidth;
-				y*=screenHeight;
-				
-				var out = false;
-				if (x < 0) { x=0; out=true; }
-				if (y < 0) { y=0; out=true; }
+					x -= worldRect[0];
+					y -= worldRect[1];
+					x /= worldWidth;
+					y /= worldHeight;
+					
+					x*=screenWidth;
+					y*=screenHeight;
+					
+					var out = false;
 
-
-				if (x > screenWidth-e.offsetWidth) { x = screenWidth-e.offsetWidth; out=true; }
-				if (y > screenHeight-e.offsetHeight) { y = screenHeight-e.offsetHeight; out= true; }
-
-				if (!out) {
-					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
+					// out of viewport ?
+					if (x < offSets.left) {
+						x = offSets.left;
+						out = true;
+					}
+					if (y < offSets.top) {
+						y = offSets.top;
 						out=true;
 					}
 
-					if (!currentHighlightedNode.ishighlighted()) { //@@@
+					// note we need to temporary display out of view to get the offset dimensions
+					markerEl.style.display="inherit";
+					markerEl.style.left = "-10000px";
+					markerEl.style.top = "-10000px";
+
+					if (x > screenWidth - (markerEl.offsetWidth / 2) - offSets.right) {
+						x = screenWidth - markerEl.offsetWidth - offSets.right;
 						out=true;
 					}
-				}
+					if (y > screenHeight - (markerEl.offsetHeight / 2) - offSets.bottom) {
+						y = screenHeight - markerEl.offsetHeight - offSets.bottom;
+						if(options.markerOffsets && options.markerOffsets.bottom) y -= options.markerOffsets.bottom;
+						out= true;
+					}
 
-
-				e.style.left = x;
-				e.style.top = y;
-
-
-                                if (out) {
-					e.style.display="inherit";
-				}
-				else {
-					e.style.display="none";
-				}
-				
-//console.log("7..... "+x+", "+y);
-
-
-			});
-//console.log("8.....");
+					// only display when out of viewport
+					if(!out) {
+						markerEl.style.display="none";
+					}
+					else {
+						markerEl.style.display="inherit";
+						markerEl.style.left = x + "px";
+						markerEl.style.top = y + "px";
+					}
+				});
+			}, 200);
 		}
 
+		function addMarker(quadid, nodeid) {
 
-		function addMarker(quadid, nodeid, name, x, y) {
-			if(options.useMarkers) {
+			if(options.useMarkers && !visitedNodes[nodeid]) {
+
+				var node = getNodesData(quadid, nodeid);
 
 				var markers = document.getElementsByClassName( options.markerClass );
 				Array.prototype.forEach.call(markers, function(e) {
 					if (e.getAttributeNS(null, 'data-nodeid') != currentnodeid) {
 						return;
 					}
-
 				});
 
-
-				var markerid = "marker-"+markerCount;
 				markerCount = markerCount + 1;
 				if (markerCount == options.maxNrMarkers) {
 					markerCount = 0;
+					visitedNodes.shift();
 				}
-				var marker = document.getElementById(markerid);
 
-				if (marker == null) {
-					marker = document.createElement("span");
+				visitedNodes.push(nodeid);
+
+				var	marker = document.createElement("span");
 					marker.setAttribute("class", options.markerClass+" markertype-visited");
-					marker.setAttribute("id", markerid);
+					marker.setAttribute("font-family", options.fontFamily);
+					marker.setAttribute("font-size", Math.round(options.fontSize * .77));
 					marker.style.position = "absolute";
-
+					marker.style.display="none";
 					marker.addEventListener('click', function () {
 						changehighlightTo(quadid, nodeid);
 					});
 					markercontainer.appendChild(marker);
-				}
 
-				marker.setAttributeNS(null, 'data-nodeid',nodeid);
-				marker.style.left = "1in";
-				marker.style.top = "1in";
-                                marker.innerHTML = "<span class='markername'>"+name+"</a>";
-
-//console.log("input: x,y="+x+", "+y);
-
-				marker.setAttributeNS(null, "data-x", x);
-				marker.setAttributeNS(null, "data-y", y);
-				
+				marker.setAttribute('data-nodeid',nodeid);
+				marker.innerHTML = node.name;
+				marker.setAttribute("data-x", node.x);
+				marker.setAttribute("data-y", node.y);				
 				repositionMarkers();
 			}
 		}
@@ -3365,9 +3434,6 @@ repositionMarkers();
 				markercontainer = document.createElement("div");
 				markercontainer.setAttribute("class", options.markercontainerClass);
 
-				markercontainer.setAttribute("width", "5in");
-				markercontainer.setAttribute("height", "3in");
-	
 				markercontainer.setAttribute("position", "absolute");
 				markercontainer.setAttribute("x", "0");
 				markercontainer.setAttribute("y", "0");
@@ -3439,7 +3505,11 @@ repositionMarkers();
 			loadMapInfo(nodeid);
 
 			// the map rect only needs to be determined initial and on resize
-			mfrmap.addEventListener("resize", setMapRect);
+			window.addEventListener("resize", function() {
+				setMapRect();
+				// also reposition the markers
+				repositionMarkers();
+			});
 
 			document.addEventListener('keyup', function KeyCheck(e) {
 				var KeyID = (window.event) ? event.keyCode : e.keyCode;
@@ -3463,7 +3533,8 @@ repositionMarkers();
 			zoomOut: zoomOut,
 			zoomReset: zoomReset,
 			setSelection: setSelection,
-			currentNodeId: function() { return currentnodeid; }
+			currentNodeId: function() { return currentnodeid; },
+			setMarkerOffsets: setMarkerOffsets
 		};
 
 	}, newGraph = function (settings) {
