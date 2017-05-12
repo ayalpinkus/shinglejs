@@ -884,15 +884,31 @@ var shingle = shingle || (function () {
 		    }
 		}
 
-		function setSelection(dimensions) {
+		function setSelection(dims) {
 
 			mapLoaded(function() {
+
+				var dimensions = dims || {}, minPerc = 2 / 100;
+
+				dimensions.x = dimensions.x || 0;
+				dimensions.y = dimensions.y || 0;
+				dimensions.width = dimensions.width || 0;
+				dimensions.height = dimensions.height || 0;
+
+				// minimum width and height to prevent dissapearing rect
+				if(dimensions.width < minPerc || dimensions.height < minPerc) {
+					var ratio = dimensions.width / dimensions.height;
+					dimensions.width = minPerc;
+					dimensions.height = dimensions.width / ratio;
+				}				
+
 				if(!navrect) {
 					navrect = document.createElementNS(xmlns, "rect");
 					translationEl.appendChild(navrect);
 					navrect.setAttributeNS(null, "fill", 'none');
 					navrect.setAttributeNS(null, "stroke", '#323232');
 				}
+
 				var width = (mapinfo["quadtree"]["xmax"] - mapinfo["quadtree"]["xmin"]),
 					height = (mapinfo["quadtree"]["ymax"] - mapinfo["quadtree"]["ymin"]);
 
@@ -2669,7 +2685,7 @@ var shingle = shingle || (function () {
 
 			nodescontainer.appendChild(gnod);
 
-			quadsDrawn[quadid].nodes = gnod;
+			if(quadsDrawn[quadid]) quadsDrawn[quadid].nodes = gnod;
 
 			// DEBUG
 			if (options.debugQuads && graph["header"]) {
