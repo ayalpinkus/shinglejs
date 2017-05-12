@@ -167,7 +167,6 @@ var shingle = shingle || (function () {
 			maxScale = 0.5,
 			edgeWidthScale = 1 / 60.0,
 			quadsDrawn = {},
-			markerCount = 0,
 			quadLevels = false,
 			shouldQuadBeVisible = quadIntersects,
 			boundingrect, mfrmap, debugEl, zoom,
@@ -207,7 +206,7 @@ var shingle = shingle || (function () {
 			navrect = null, setNavRect = null,
 			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200,
 			doRepositionMarkers = null,
-			visitedNodes = [];
+			visitedNodes = [], markerIdx = {};
 
 
 		// defaults
@@ -3387,6 +3386,13 @@ var shingle = shingle || (function () {
 			}, 200);
 		}
 
+		function removeMarker(nodeid) {
+			if(markerIdx[nodeid]) {
+				var marker = markerIdx[nodeid];
+				if(marker.parentNode) markercontainer.removeChild(markerIdx[nodeid]);
+			}
+		}
+
 		function addMarker(quadid, nodeid) {
 
 			if(options.useMarkers && !visitedNodes[nodeid]) {
@@ -3399,12 +3405,6 @@ var shingle = shingle || (function () {
 						return;
 					}
 				});
-
-				markerCount = markerCount + 1;
-				if (markerCount == options.maxNrMarkers) {
-					markerCount = 0;
-					visitedNodes.shift();
-				}
 
 				visitedNodes.push(nodeid);
 
@@ -3422,8 +3422,15 @@ var shingle = shingle || (function () {
 				marker.setAttribute('data-nodeid',nodeid);
 				marker.innerHTML = node.name;
 				marker.setAttribute("data-x", node.x);
-				marker.setAttribute("data-y", node.y);				
+				marker.setAttribute("data-y", node.y);
+				markerIdx[nodeid] = marker;
 				repositionMarkers();
+
+				if (visitedNodes.length > options.maxNrMarkers) {
+					// remove the oldest added visitednode / marker
+					removeMarker(visitedNodes[0]);
+					visitedNodes.shift();
+				}
 			}
 		}
 
