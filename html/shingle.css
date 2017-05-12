@@ -18,6 +18,15 @@
   top:0in;
 }
 
+.shingle-clickable:hover {
+  cursor: pointer;
+}
+
+.shingle-visited-node-text {
+  opacity: 0.83;
+  text-decoration: underline;
+}
+
 .shingle-shingle-marker-container {
   overflow:visible;
   position:absolute; 
@@ -40,7 +49,6 @@
 
 .markertype-visited
 {
-  font-family: sans;
   background-color:#ffffff;
   border: 0.0250in solid #6c0606;
   color: #6c0606;
