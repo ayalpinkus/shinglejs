@@ -107,7 +107,7 @@ int LCSubStr(char *X, char *Y, int m, int n)
             if (i == 0 || j == 0)
                 LCSuff[i][j] = 0;
  
-            else if (X[i-1] == Y[j-1])
+            else if (!strncasecmp(&X[i-1], &Y[j-1], 1)) // (X[i-1] == Y[j-1])
             {
                 LCSuff[i][j] = LCSuff[i-1][j-1] + 1;
                 result = max(result, LCSuff[i][j]);
@@ -172,7 +172,7 @@ fprintf(stderr,"Loading\n");
 */
       if (longest != 0)
       {
-        if (longest > 4*strlen(nodes.nodes[i].namep)/5 && longest > 4*strlen(nodes.nodes[j].namep)/5)
+        if (longest == strlen(nodes.nodes[i].namep) || longest == strlen(nodes.nodes[j].namep))
 	{
 	  printf("Node ids: %s, %s\n\tNames: [%s], [%s]\n",nodes.nodes[i].nodeidp, nodes.nodes[j].nodeidp, nodes.nodes[i].namep, nodes.nodes[j].namep);
 nrdoubles++;
