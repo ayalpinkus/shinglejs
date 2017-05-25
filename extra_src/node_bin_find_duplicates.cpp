@@ -123,6 +123,23 @@ int LCSubStr(char *X, char *Y)
   return LCSubStr(X, Y, strlen(X), strlen(Y));
 }
 
+int lengthEqual(char* s1, char* s2)
+{
+  int len = 0;
+  while (*s1 && *s2)
+  {
+    if (strncasecmp(s1, s2, 1))
+    {
+      break;
+    }
+    s1++;
+    s2++;
+    len++;
+  }
+  return len;
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -149,6 +166,10 @@ fprintf(stderr,"Loading\n");
     {
       continue;
     }
+    if (!strcmp(nodes.nodes[i].namep,"unknown"))
+    {
+      continue;
+    }
 
     for (j=i+1;j<nodes.nrnodes;j++)
     {
@@ -161,10 +182,17 @@ fprintf(stderr,"Loading\n");
       {
         continue;
       }
+      if (!strcmp(nodes.nodes[j].namep,"unknown"))
+      {
+        continue;
+      }
 
 //printf("i=%ld,j=%ld, names: %s, %s\n",i,j,nodes.nodes[i].namep, nodes.nodes[j].namep);
 
-      int longest = LCSubStr(nodes.nodes[i].namep, nodes.nodes[j].namep);
+      int longest = lengthEqual(nodes.nodes[i].namep, nodes.nodes[j].namep);
+
+
+//      int longest = LCSubStr(nodes.nodes[i].namep, nodes.nodes[j].namep);
 
 /*
       int *ret = lcsubstr_dp(nodes.nodes[i].namep, nodes.nodes[j].namep);
