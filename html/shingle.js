@@ -16,6 +16,7 @@ var shingle = shingle || (function () {
 				// use in cases where other elements may overlap the graph
 				// e.g. markerOffsets: { top: 10, right: 10, bottom: 0, left: 10 }
 				markerOffsets: null,
+				markerCoverAreas: [],
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
 				enableNULLnameNodes: false,
@@ -55,6 +56,7 @@ var shingle = shingle || (function () {
 				nodeClass: 'shingle-node',
 				nodeTextClass: 'shingle-node-text',
 				clickableClass: 'shingle-clickable',
+				initialNodeTextClass: 'shingle-initial-node-text',
 				visitedNodeTextClass: 'shingle-visited-node-text',
 				highlightedNodeClass: 'shingle-node-highlighted',
 				highlightedNodeTextClass: 'shingle-node-h-text',
@@ -203,7 +205,7 @@ var shingle = shingle || (function () {
 			dragCoordinates = { x: false, y: false },
 			origin = location.origin || (location.protocol + "//" + location.hostname + (location.port ? ':' + location.port: '')),
 			scaleX = null, scaleY = null,
-			navrect = null, setNavRect = null,
+			navrect = null, navrect2 = null, setNavRect = null,
 			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200,
 			doRepositionMarkers = null,
 			visitedNodes = [], markerIdx = {};
@@ -865,6 +867,7 @@ var shingle = shingle || (function () {
 		}
 
 		function mapLoaded(callback) {
+
 			var wait = true;
 		    if(mapinfo && mapinfo["quadtree"] && typeof scalingEl != "undefined" && typeof translationEl != "undefined") {
 				wait = false;
@@ -878,7 +881,7 @@ var shingle = shingle || (function () {
 			            mapLoaded(callback);
 			        }, mapLoadWaitMsec);
 		    	} else {
-		    		this.log('Map not loaded after ' + mapLoadTries + ' attempts');
+		    		console.log('Map not loaded after ' + mapLoadTries + ' attempts');
 		    	}
 		    }
 		}
@@ -886,7 +889,6 @@ var shingle = shingle || (function () {
 		function setSelection(dims) {
 
 			mapLoaded(function() {
-
 				var dimensions = dims || {}, minPerc = 2 / 100;
 
 				dimensions.x = dimensions.x || 0;
@@ -903,19 +905,33 @@ var shingle = shingle || (function () {
 
 				if(!navrect) {
 					navrect = document.createElementNS(xmlns, "rect");
-					translationEl.appendChild(navrect);
 					navrect.setAttributeNS(null, "fill", 'none');
-					navrect.setAttributeNS(null, "stroke", '#323232');
+					navrect.setAttributeNS(null, "stroke", '#505050');
+
+					navrect2 = document.createElementNS(xmlns, "rect");
+					navrect2.setAttributeNS(null, "fill", 'none');
+					navrect2.setAttributeNS(null, "stroke", '#fff');
+
+					translationEl.appendChild(navrect2);
+					translationEl.appendChild(navrect);
 				}
 
 				var width = (mapinfo["quadtree"]["xmax"] - mapinfo["quadtree"]["xmin"]),
-					height = (mapinfo["quadtree"]["ymax"] - mapinfo["quadtree"]["ymin"]);
+					height = (mapinfo["quadtree"]["ymax"] - mapinfo["quadtree"]["ymin"]),
+					strokeWidth = Math.max(Math.min(Math.max(dimensions.width, dimensions.height), 2 / scaleX), 1 / scaleX);
 
 				navrect.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"]));
 				navrect.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"]));
 				navrect.setAttributeNS(null, "width", "" + (width * dimensions.width));
 				navrect.setAttributeNS(null, "height", "" + (height * dimensions.height));
-				navrect.setAttributeNS(null, "stroke-width", "" + Math.max(Math.min(Math.max(dimensions.width, dimensions.height), 2 / scaleX), 1 / scaleX) + "em");
+				navrect.setAttributeNS(null, "stroke-width", "" + strokeWidth + "em");
+
+				// set second navrect has x y offset
+				navrect2.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"] + 4));
+				navrect2.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"] + 4));
+				navrect2.setAttributeNS(null, "width", "" + (width * dimensions.width));
+				navrect2.setAttributeNS(null, "height", "" + (height * dimensions.height));
+				navrect2.setAttributeNS(null, "stroke-width", "" + strokeWidth + "em");
 			});
 		}
 
@@ -1763,8 +1779,11 @@ var shingle = shingle || (function () {
 						highlightednamescontainer.removeChild(textRect.field);
 						textRects.splice(i, 1);
 					} else {
-						var fieldClassName = textRect.field.getAttributeNS(null, "class") + ' ' + options.visitedNodeTextClass;
-						textRect.field.setAttributeNS(null, "class", fieldClassName);
+						var fieldClassName = textRect.field.getAttributeNS(null, "class");
+
+						if(fieldClassName.indexOf(options.visitedNodeTextClass) == -1)  {
+							textRect.field.setAttributeNS(null, "class", fieldClassName + ' ' + options.visitedNodeTextClass);
+						}
 					}
 				}
 			} else {
@@ -2143,6 +2162,9 @@ var shingle = shingle || (function () {
 				var fieldClassName = options.nodeTextClass + ' shingle-unselectable';
 				if(options.useMarkers) {
 					fieldClassName += ' ' + options.clickableClass;
+				}
+				if(node.nodeid == options.nodeId) {
+					fieldClassName += ' ' + options.initialNodeTextClass;
 				}
 				textfield.setAttributeNS(null, "class", fieldClassName);
 			}
@@ -3304,7 +3326,57 @@ var shingle = shingle || (function () {
 
 		function setMarkerOffsets(offSets) {
 			options.markerOffsets = offSets;
-			repositionMarkers();
+			mapLoaded(function() {
+				repositionMarkers();
+			});
+		}
+
+		function setMarkerCoverAreas(areas) {
+			mapLoaded(function() {
+				// filter out areas contained by other areas
+				// or out of the viewport
+				var screenRect = getMapRect(),
+	            	screenWidth  = screenRect.right-screenRect.left,
+	            	screenHeight = screenRect.bottom-screenRect.top;
+
+	            // out of viewport, otherwise set margins
+				for (var i = areas.length - 1; i >= 0; i--) {
+
+					if(	areas[i].right <= screenRect.left || 
+						areas[i].left >= screenRect.right || 
+						areas[i].bottom <= screenRect.top || 
+						areas[i].top >= screenRect.bottom) {
+						areas.splice(i, 1);
+					} else {
+						areas[i].margins = {
+							top: Math.max(screenRect.top - areas[i].top, 0),
+							right: Math.max(screenRect.right - areas[i].right, 0),
+							bottom: Math.max(screenRect.bottom - areas[i].bottom, 0),
+							left: Math.max(screenRect.left - areas[i].left, 0)
+						}
+					}
+				}
+
+	            // covered by other areas
+				for (var i = areas.length - 1; i >= 0; i--) {
+					for (var j = areas.length - 1; j >= 0; j--) {
+						if(i != j) {
+							if(	areas[i].top >= areas[j].top &&
+								areas[i].left >= areas[j].left && 
+								areas[i].bottom <= areas[j].bottom && 
+								areas[i].right <= areas[j].right) {
+								areas[i].ignore = true;
+							}
+						}
+					};
+				};
+				for (var i = areas.length - 1; i >= 0; i--) {
+					if(areas[i].ignore) areas.splice(i, 1);
+				}
+
+				options.markerCoverAreas = areas;
+				repositionMarkers();
+			});
 		}
 
 		function repositionMarkers() {
@@ -3332,17 +3404,17 @@ var shingle = shingle || (function () {
 				offSets.bottom = offSets.bottom || 0;
 				offSets.left = offSets.left || 0;
 
+				// first the offsets
 				Array.prototype.forEach.call(markers, function(markerEl) {
 
 					var x = markerEl.getAttribute('data-x');
 					var y = markerEl.getAttribute('data-y');
 
-
+					// map to screen pixels
 					x -= worldRect[0];
 					y -= worldRect[1];
 					x /= worldWidth;
-					y /= worldHeight;
-					
+					y /= worldHeight;					
 					x*=screenWidth;
 					y*=screenHeight;
 					
@@ -3373,14 +3445,71 @@ var shingle = shingle || (function () {
 						out= true;
 					}
 
-					// only display when out of viewport
+					markerEl.style.left = x + "px";
+					markerEl.style.top = y + "px";
+
+					// check the covered areas
+					if(options.markerCoverAreas.length) {
+
+						var markerRect = {
+							top: y,
+							right: x + markerEl.offsetWidth,
+							bottom: y + markerEl.offsetHeight,
+							left: x
+						}
+
+						Array.prototype.forEach.call(options.markerCoverAreas, function(coverArea) {
+
+							// covered ?
+							var covered = !(coverArea.right < markerRect.left || 
+											coverArea.left > markerRect.right || 
+											coverArea.bottom < markerRect.top || 
+											coverArea.top > markerRect.bottom);
+
+							// only display when covered by area(s)
+							if(covered) {
+
+								// find side closest to marker with
+								// enough space to display marker
+								var margins = [
+									{ pos: 'top', val: Math.abs(coverArea.top - markerRect.top), fix: 'y', space: markerEl.offsetHeight },
+									{ pos: 'right', val: Math.abs(coverArea.right - markerRect.right), fix: 'x', space: markerEl.offsetWidth },
+									{ pos: 'bottom', val: Math.abs(coverArea.bottom - markerRect.bottom), fix: 'y', space: markerEl.offsetHeight },
+									{ pos: 'left', val: Math.abs(coverArea.left - markerRect.left), fix: 'x', space: markerEl.offsetWidth }
+								], useMargin = false;
+
+								margins.sort(function(a, b) {
+								    return b.val - a.val;
+								});
+
+								for (var i = margins.length - 1; i >= 0; i--) {
+									if(coverArea.margins[margins[i].pos] >= margins[i].space) {
+										useMargin = i;
+										break;
+									}									
+								};
+
+								if(useMargin) {
+									if(margins[useMargin].fix == 'x') {
+										x = coverArea[margins[useMargin].pos];
+									} else {
+										y = coverArea[margins[useMargin].pos];
+									}
+								}
+
+								out = true;
+								markerEl.style.left = x + "px";
+								markerEl.style.top = y + "px";
+							}
+						});
+					}
+
+					// only display when out of viewport or covered
 					if(!out) {
 						markerEl.style.display="none";
 					}
 					else {
 						markerEl.style.display="inherit";
-						markerEl.style.left = x + "px";
-						markerEl.style.top = y + "px";
 					}
 				});
 			}, 200);
@@ -3426,9 +3555,15 @@ var shingle = shingle || (function () {
 				markerIdx[nodeid] = marker;
 				repositionMarkers();
 
+				// remove the first marker if max exceeded
 				if (visitedNodes.length > options.maxNrMarkers) {
 					// remove the oldest added visitednode / marker
-					removeMarker(visitedNodes[0]);
+					// do not remove the initial nodeid if specified
+					if(options.nodeId && options.nodeId == visitedNodes[0]) {
+						visitedNodes.push(options.nodeId)
+					} else {
+						removeMarker(visitedNodes[0]);
+					}
 					visitedNodes.shift();
 				}
 			}
@@ -3467,13 +3602,6 @@ var shingle = shingle || (function () {
 				shinglecontainer.appendChild(markercontainer);
 			}
 
-
-
-
-
-
-
-
 			zoom = document.createElement("input");
 
 			if(!options.zoomSlider) zoom.style.display= "none";
@@ -3499,8 +3627,6 @@ var shingle = shingle || (function () {
 
 			attachMouseEvents();
 
-			var nodeid = null;
-
 			// some defaults / parameters may come from the url
 			if (document.location.search) {
 				var i;
@@ -3512,8 +3638,7 @@ var shingle = shingle || (function () {
 				}
 
 				if (request[options.nodeField]) {
-					nodeid = request[options.nodeField];
-					var hashed = getHash(nodeid);
+					options.nodeId = request[options.nodeField];
 				}
 				if (request["debug"]) {
 					options.debug = true;
@@ -3523,9 +3648,7 @@ var shingle = shingle || (function () {
 				}
 			}
 
-			if(!nodeid && options.nodeId) nodeid = options.nodeId;
-
-			loadMapInfo(nodeid);
+			loadMapInfo(options.nodeId);
 
 			// the map rect only needs to be determined initial and on resize
 			window.addEventListener("resize", function() {
@@ -3557,7 +3680,8 @@ var shingle = shingle || (function () {
 			zoomReset: zoomReset,
 			setSelection: setSelection,
 			currentNodeId: function() { return currentnodeid; },
-			setMarkerOffsets: setMarkerOffsets
+			setMarkerOffsets: setMarkerOffsets,
+			setMarkerCoverAreas: setMarkerCoverAreas
 		};
 
 	}, newGraph = function (settings) {

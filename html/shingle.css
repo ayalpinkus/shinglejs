@@ -23,8 +23,11 @@
 }
 
 .shingle-visited-node-text {
-  opacity: 0.83;
   text-decoration: underline;
+}
+
+.shingle-visited-node-text:not(.shingle-initial-node-text) {
+  opacity: 0.88;
 }
 
 .shingle-shingle-marker-container {
