@@ -178,6 +178,14 @@ static void processFile(const char* fname)
     tokenizer.Match(",");
     edge.SetNodeIdB(tokenizer.nextToken);
     tokenizer.LookAhead();
+
+/* Skip any additional fields */
+    while (!strcmp(tokenizer.nextToken, ","))
+    {
+      tokenizer.Match(",");
+      tokenizer.LookAhead();
+    }
+
     tokenizer.Match("]");
     if (!strcmp(tokenizer.nextToken, ","))
     {
