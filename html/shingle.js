@@ -888,6 +888,11 @@ var shingle = shingle || (function () {
 
 		function setSelection(dims) {
 
+			if(dims && dims.x && isNaN(dims.x)) return ;
+			if(dims && dims.y && isNaN(dims.y)) return ;
+			if(dims && dims.width && isNaN(dims.width)) return ;
+			if(dims && dims.height && isNaN(dims.height)) return ;
+
 			mapLoaded(function() {
 				var dimensions = dims || {}, minPerc = 2 / 100;
 
