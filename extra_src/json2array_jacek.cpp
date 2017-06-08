@@ -179,6 +179,20 @@ static void processFile(const char* fname)
     edge.SetNodeIdB(tokenizer.nextToken);
     tokenizer.LookAhead();
 
+    // Read edge strength here.
+    tokenizer.Match(",");
+    // Bug in data: some fields were left empty, so assuming edge strength 1 here.
+    if (!strcmp(tokenizer.nextToken, ","))
+    {
+      edge.strength = 1;
+    }
+    else
+    {
+      edge.strength = atoi(tokenizer.nextToken);
+      tokenizer.LookAhead();
+    }
+
+
 /* Skip any additional fields */
     while (!strcmp(tokenizer.nextToken, ","))
     {

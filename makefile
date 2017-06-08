@@ -13,6 +13,9 @@ all:  $(SHINGLE_OUTPUT_FOLDERS) $(ALL_OBJS) $(SHINGLEJS_BIN)  $(RELEASE_PATH)_sa
 clean:
 	-rm -rf $(OBJ_PATH)* $(BIN_PATH)* $(RELEASE_PATH)*
 
+bin-clean:
+	-rm -rf $(OBJ_PATH)* $(BIN_PATH)*
+
 $(OBJ_PATH)created.txt:
 	-mkdir -p $(OBJ_PATH)
 	touch $(OBJ_PATH)created.txt

@@ -224,6 +224,9 @@ static void WriteLeafJSON(char* rootname, MFRNodeArray &nodes, MFREdgeArray &edg
       fprintf(json_out_file,"      \"x\": %f,\n",nodes.nodes[index].x);
       fprintf(json_out_file,"      \"y\": %f,\n",nodes.nodes[index].y);
       fprintf(json_out_file,"      \"size\": %f,\n",nodes.nodes[index].size);
+#ifdef STORE_TOTAL_EDGECOUNTS
+      fprintf(json_out_file,"      \"tne\": %d,\n",nodes.nodes[index].totalnredges);
+#endif // STORE_TOTAL_EDGECOUNTS
       fprintf(json_out_file,"      \"community\": %ld\n",nodes.nodes[index].community);
       fprintf(json_out_file,"    }\n");
     }
@@ -450,6 +453,13 @@ void CollectEdgesIntoQuads(MFRNodeArray &nodes, MFREdgeArray &edges, MFRQuadTree
 }
 
 
+int strength_compare(const void *x1, const void *x2)
+{
+  MFREdgeInt *e1 = (MFREdgeInt *)x1;
+  MFREdgeInt *e2 = (MFREdgeInt *)x2;
+  return (e2->strength - e1->strength);
+}
+
 int main(int argc, char** argv)
 {
   if (argc<4)
@@ -462,6 +472,32 @@ int main(int argc, char** argv)
   const char* map_out_path = argv[3];
   MFRNodeArray nodes(node_in_fname);
   MFREdgeArray edges(edge_in_fname, nodes);
+
+  
+  fprintf(stderr,"Sort edges\n");fflush(stderr);
+  qsort(edges.edges, edges.nredges, sizeof(MFREdgeInt), strength_compare);
+
+  fprintf(stderr,"Max edge strength: %d\n",edges.edges[0].strength);
+  if (edges.edges[0].strength < edges.edges[edges.nredges-1].strength)
+  {
+    fprintf(stderr, "@@@@@@@@@@@@@@@@@@@@\nWrong sorting\n@@@@@@@@@@@@@@@@@@@@@@\n");
+    exit(-1);
+  }
+  fprintf(stderr,"Finished sorting edges\n");fflush(stderr);
+
+  fprintf(stderr,"Count edges and store with nodes\n");fflush(stderr);
+  {
+    int i;
+    for (i=0;i<edges.nredges;i++)
+    {
+      edges.edges[i].nodeA->totalnredges ++;
+      edges.edges[i].nodeB->totalnredges ++;
+    }
+  }
+//ier@
+  fprintf(stderr,"Finished counting edges\n");fflush(stderr);
+
+
 
   fprintf(stderr,"Cleaning names (should perhaps be done earlier?)\n");fflush(stderr);
   nodes.CleanNames();

@@ -127,6 +127,10 @@ MFREdgeArray::MFREdgeArray(const char* fname, MFRNodeArray& nodes)
     edges[nredges].nodeA = nodes.LookUp(extEdge.nodeidA);
     edges[nredges].nodeB = nodes.LookUp(extEdge.nodeidB);
     
+#ifdef SUPPORT_EDGE_STRENGTHS
+     edges[nredges].strength = extEdge.strength;
+#endif // SUPPORT_EDGE_STRENGTHS
+    
     if (edges[nredges].nodeA == NULL)
     {
       fprintf(stderr,"Warning: edge %d: id %s for edge not found.\n", i, extEdge.nodeidA);

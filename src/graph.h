@@ -8,6 +8,16 @@
 #define MAX_SCOPUS_ID_LENGTH 32
 
 
+#define SUPPORT_EDGE_STRENGTHS
+
+#define STORE_TOTAL_EDGECOUNTS
+
+
+#ifdef SUPPORT_EDGE_STRENGTHS
+#define EDGE_STRENGTH_TYPE int
+#endif // SUPPORT_EDGE_STRENGTHS
+
+
 
 class QuadNode;
 
@@ -20,6 +30,9 @@ struct MFRNode
   { 
     SetName("");
     SetNodeId("");
+#ifdef STORE_TOTAL_EDGECOUNTS
+    totalnredges = 0;
+#endif // STORE_TOTAL_EDGECOUNTS
   }
 
   inline void SetName(const char* aname)
@@ -50,12 +63,23 @@ struct MFRNode
   double size;
   double level;
   long community;
+
+#ifdef STORE_TOTAL_EDGECOUNTS
+  int totalnredges;
+#endif // STORE_TOTAL_EDGECOUNTS
+
   QuadNode* quadNode;
 };
 
 struct MFREdgeExt
 {
-  inline MFREdgeExt() {nodeidA[0] = 0; nodeidB[0] = 0;}
+  inline MFREdgeExt() 
+  {
+    nodeidA[0] = 0; nodeidB[0] = 0;
+#ifdef SUPPORT_EDGE_STRENGTHS
+    strength = 1;
+#endif // SUPPORT_EDGE_STRENGTHS
+  }
   inline void SetNodeIdA(const char* nodeid)
   {
     if (strlen(nodeid) > MAX_SCOPUS_ID_LENGTH-1)
@@ -75,19 +99,27 @@ struct MFREdgeExt
     nodeidB[MAX_SCOPUS_ID_LENGTH-1] = 0;
   }
 
-//private:
   char nodeidA[MAX_SCOPUS_ID_LENGTH];
   char nodeidB[MAX_SCOPUS_ID_LENGTH];
-//public:
-//friend class MFREdgeArray;
+
+#ifdef SUPPORT_EDGE_STRENGTHS
+  EDGE_STRENGTH_TYPE strength;
+#endif // SUPPORT_EDGE_STRENGTHS
 };
 
 
 struct MFREdgeInt
 {
-  inline MFREdgeInt() : nodeA(NULL), nodeB(NULL) { }
+  inline MFREdgeInt() : nodeA(NULL), nodeB(NULL)
+#ifdef SUPPORT_EDGE_STRENGTHS
+    , strength(1)
+#endif // SUPPORT_EDGE_STRENGTHS
+  { }
   MFRNode* nodeA;
   MFRNode* nodeB;
+#ifdef SUPPORT_EDGE_STRENGTHS
+  EDGE_STRENGTH_TYPE strength;
+#endif // SUPPORT_EDGE_STRENGTHS
 };
 
 class MFRNodeArray
