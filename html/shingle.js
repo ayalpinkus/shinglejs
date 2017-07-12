@@ -16,6 +16,8 @@ var shingle = shingle || (function () {
 				// use in cases where other elements may overlap the graph
 				// e.g. markerOffsets: { top: 10, right: 10, bottom: 0, left: 10 }
 				markerOffsets: null,
+				initialNodeNames: false,
+				initialNodeNameNodeMinSize: 0,
 				markerCoverAreas: [],
 				NULLnodeName: 'unknown',
 				hideNULLnameNodes: false,
@@ -208,7 +210,8 @@ var shingle = shingle || (function () {
 			navrect = null, navrect2 = null, setNavRect = null,
 			mapLoadTries = 0, mapLoadMaxTries = 999, mapLoadWaitMsec = 200,
 			doRepositionMarkers = null,
-			visitedNodes = [], markerIdx = {};
+			visitedNodes = [], markerIdx = {},
+			initiallyHighlightedNodes = {}, persistentNodeMarkers = [], initialQuads = true;
 
 
 		// defaults
@@ -911,7 +914,7 @@ var shingle = shingle || (function () {
 				if(!navrect) {
 					navrect = document.createElementNS(xmlns, "rect");
 					navrect.setAttributeNS(null, "fill", 'none');
-					navrect.setAttributeNS(null, "stroke", '#505050');
+					navrect.setAttributeNS(null, "stroke", '#808080');
 
 					navrect2 = document.createElementNS(xmlns, "rect");
 					navrect2.setAttributeNS(null, "fill", 'none');
@@ -923,20 +926,22 @@ var shingle = shingle || (function () {
 
 				var width = (mapinfo["quadtree"]["xmax"] - mapinfo["quadtree"]["xmin"]),
 					height = (mapinfo["quadtree"]["ymax"] - mapinfo["quadtree"]["ymin"]),
-					strokeWidth = Math.max(Math.min(Math.max(dimensions.width, dimensions.height), 2 / scaleX), 1 / scaleX);
+					strokeFactor = 1.33,
+					onePX = scaleX / currentScale,
+					strokeWidth = (strokeFactor * onePX) + "px";
 
 				navrect.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"]));
 				navrect.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"]));
 				navrect.setAttributeNS(null, "width", "" + (width * dimensions.width));
 				navrect.setAttributeNS(null, "height", "" + (height * dimensions.height));
-				navrect.setAttributeNS(null, "stroke-width", "" + strokeWidth + "em");
+				navrect.setAttributeNS(null, "stroke-width", "" + strokeWidth);
 
 				// set second navrect has x y offset
-				navrect2.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"] + 4));
-				navrect2.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"] + 4));
+				navrect2.setAttributeNS(null, "x", "" + ((width * dimensions.x) + mapinfo["quadtree"]["xmin"] + (strokeFactor * onePX)));
+				navrect2.setAttributeNS(null, "y", "" + ((height * dimensions.y) + mapinfo["quadtree"]["ymin"] + (strokeFactor * onePX)));
 				navrect2.setAttributeNS(null, "width", "" + (width * dimensions.width));
 				navrect2.setAttributeNS(null, "height", "" + (height * dimensions.height));
-				navrect2.setAttributeNS(null, "stroke-width", "" + strokeWidth + "em");
+				navrect2.setAttributeNS(null, "stroke-width", "" + strokeWidth);
 			});
 		}
 
@@ -971,6 +976,8 @@ var shingle = shingle || (function () {
 					height: Math.min(viewHeight / mapHeight, 1)
 				});
 			}
+
+			showInitialNodeNames();
 
 			if(mapinfo.loadFromBackend) {
 				findQuadsNodeJs(screenrect);
@@ -1122,26 +1129,7 @@ var shingle = shingle || (function () {
 			});
 		}
 
-		function renderMap() {
-
-			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
-			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
-
-			if (quadLevels) {
-				maxScale = 1;
-			}
-
-			nodeRadiusScale = mapinfo["averageQuadWidth"] *options.nodeRadiusScaleFactor;
-
-			if (nodeRadiusScale > 1)
-				nodeRadiusScale = 1;
-
-			// calculate edge radius depending on average quad width
-			nodeEdgeRadiusScale = (2 / 3 * mapinfo["averageQuadWidth"]) / 200.0;
-			edgeWidthScale = (2 / 3 * mapinfo["averageQuadWidth"]) * minScale / 10.0;
-
-			startScale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0));
-			startNodeScale = calcNodeScale(startScale);
+		function calcMapStyles() {
 
 			// use generated scaling steps, scaling using dynamic generated css
 			stepScale = minScale;
@@ -1175,27 +1163,35 @@ var shingle = shingle || (function () {
 				'opacity': svg12T ? '0.25' : '0.5'
 			});
 
-			while (stepScale <= maxScale && stepScale >= minScale) {
+			// for IE (absence of non-scaling strokes / svg1.2tiny) we need to know the pixel factor
+			var mapWidth = mapinfo["quadtree"]["xmax"] - mapinfo["quadtree"]["xmin"],
+				dspWidth = mfrmap.clientWidth || false,
+				pxFactor = dspWidth ? (mapWidth / dspWidth) : (mapinfo["totalMapWidth"] / 2254); // map constant
 
-				if(startScaleStep === false && startScale >= (1 / stepScale)) {
-					startScale = (1 / stepScale);
+			while (stepScale <= (maxScale * 1.1) && stepScale >= minScale) {
+				var thisScale = Math.min(stepScale, maxScale);
+
+				if(startScaleStep === false && startScale >= (1 / thisScale)) {
+					startScale = (1 / thisScale);
 					startScaleStep = zoomStep;
 					incScale = false;
 				}
-				zoomSteps[zoomStep] = (1 / stepScale);
+
+				zoomSteps[zoomStep] = (1 / thisScale);
 
 				// edge width base em should always be around 2px at the screen
 				// strictly only needed when SVG 1.2T not supported by the browser
 				if(!svg12T) {
+
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.linescontainerClass + ' .' + options.edgeClass, {
-						'stroke-width': Math.max((stepScale * 2), 0.017) + 'px'
+						'stroke-width': Math.max((thisScale * 2 * pxFactor), 0.017) + 'px'
 					});
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.highlightedlinescontainerClass + ' .' + options.edgeClass, {
-						'stroke-width': Math.max((stepScale * 6), 0.033) + 'px'
+						'stroke-width': Math.max((thisScale * 4 * pxFactor), 0.033) + 'px'
 					});
 				}
 
-				var	scaleFactor = startScale * stepScale * (1 - (Math.log(zoomStep + 1) / 15));
+				var	scaleFactor = startScale * thisScale * (1 - (Math.log(zoomStep + 1) / 15));
 
 				if(incScale && options.nodesGrow) {
 					incScale += 0.0015;
@@ -1203,7 +1199,7 @@ var shingle = shingle || (function () {
 				scaleFactor += incScale;
 
 				// reverse scale the node based on zoom level
-				// keep in mind a min-width when using IE otherwise the nodes will disappear ..
+				// keep in mind a min-width otherwise the nodes or text will disappear, 0.4 when using IE 0.015 for Chrome (text only)
 				var scaleFactorM = svg12T ? scaleFactor : Math.max(scaleFactor, 0.04);
 				graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
 					'font-size': scaleFactorM + 'px'
@@ -1242,6 +1238,30 @@ var shingle = shingle || (function () {
 					stroke: 'rgb(96,111,102)!important'
 				});
 			}
+		}
+
+		function renderMap() {
+
+			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
+			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
+
+			if (quadLevels) {
+				maxScale = 1;
+			}
+
+			nodeRadiusScale = mapinfo["averageQuadWidth"] *options.nodeRadiusScaleFactor;
+
+			if (nodeRadiusScale > 1)
+				nodeRadiusScale = 1;
+
+			// calculate edge radius depending on average quad width
+			nodeEdgeRadiusScale = (2 / 3 * mapinfo["averageQuadWidth"]) / 200.0;
+			edgeWidthScale = (2 / 3 * mapinfo["averageQuadWidth"]) * minScale / 10.0;
+
+			startScale = 1 / (minScale + (maxScale - minScale) * (options.initialZoom / 100.0));
+			startNodeScale = calcNodeScale(startScale);
+
+			calcMapStyles();
 
 			// init current values
 			currentScale = startScale;
@@ -1258,6 +1278,7 @@ var shingle = shingle || (function () {
 			mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + startScaleStep;
 
 			createBaseSvgDOM();
+
 			findQuadsToDraw();
 		}
 
@@ -1636,7 +1657,7 @@ var shingle = shingle || (function () {
 				if (delta>=0.75) {
 					bitmapcontainer.style.opacity = 1;
 				} else if (delta>=0.5) {
-				bitmapcontainer.style.opacity = 4*(delta-0.5);
+					bitmapcontainer.style.opacity = 4*(delta-0.5);
 				} else {
 					bitmapcontainer.style.opacity = 0;
 				}
@@ -1769,33 +1790,35 @@ var shingle = shingle || (function () {
 			mfrmap.appendChild(svg);
 		}
 
-
-
 		function clearNodeNames(){
 			if (highlightednamescontainer == null) {
 				return;
 			}
-
 			if(options.useMarkers) {
 				var i = textRects.length;
 				while (i--) {
 					var textRect = textRects[i];
-					if(visitedNodes.indexOf(textRect.node.nodeid) == -1) {
-						highlightednamescontainer.removeChild(textRect.field);
-						textRects.splice(i, 1);
-					} else {
-						var fieldClassName = textRect.field.getAttributeNS(null, "class");
+					if(!textRect.scaleStep) {
+						if(visitedNodes.indexOf(textRect.node.nodeid) == -1) {
+							if(textRect.field.parentNode) textRect.field.parentNode.removeChild(textRect.field);
+							textRects.splice(i, 1);
+						} else {
+							var fieldClassName = textRect.field.getAttributeNS(null, "class");
 
-						if(fieldClassName.indexOf(options.visitedNodeTextClass) == -1)  {
-							textRect.field.setAttributeNS(null, "class", fieldClassName + ' ' + options.visitedNodeTextClass);
+							if(fieldClassName.indexOf(options.visitedNodeTextClass) == -1)  {
+								textRect.field.setAttributeNS(null, "class", fieldClassName + ' ' + options.visitedNodeTextClass);
+							}
 						}
 					}
 				}
 			} else {
-				textRects = [];
-				while (highlightednamescontainer.firstChild) {
-					highlightednamescontainer.removeChild(highlightednamescontainer.firstChild);
-				}
+				for (var i = textRects.length - 1; i >= 0; i--) {
+					var textRect = textRects[i];
+					if(!textRect.scaleStep && textRect.field) {
+						textRect.field.parentNode.removeChild(textRect.field);
+						textRects.splice(i, 1);
+					}
+				};
 			}
 		}
 
@@ -1941,7 +1964,7 @@ var shingle = shingle || (function () {
 			return collisionRect;
 		}
 
-		function getTextRect(textfield, node, onHoverOnly, fontAttrs, nodeOffSets, mainNode) {
+		function getTextRect(textfield, node, onHoverOnly, fontAttrs, nodeOffSets, mainNode, scaleStep) {
 
 			var offSets = nodeOffSets || {
 				x: 1,
@@ -2003,6 +2026,7 @@ var shingle = shingle || (function () {
 					field: textfield,
 					mainNode: mainNode || (typeof nodeOffSets == "undefined"),
 					onHoverOnly: onHoverOnly || false,
+					scaleStep: scaleStep || false,
 					displayed: true
 				};
 			return textRect;
@@ -2012,9 +2036,9 @@ var shingle = shingle || (function () {
 
 			var textRect = tRect;
 
-			textRect.displayed = true;
+			textRect.displayed = !textRect.scaleStep || (textRect.scaleStep >= currentScaleStep);
 
-			if(!textRect.mainNode && !textRect.onHoverOnly) {
+			if(textRect.displayed && !textRect.mainNode && !textRect.onHoverOnly) {
 
 				// check if distance to main node is mimimum of 1.8 lineheight on display
 				if(textRect.offSets.d && (textRect.offSets.d * currentScale * getSvgFactor() < options.relatedNodesFontSize * 1.8)) {
@@ -2095,10 +2119,10 @@ var shingle = shingle || (function () {
 					oldHeight: textRect.bottom - textRect.top 
 				};
 
-				textRect.field.setAttributeNS(null, "font-size", fontSize.newSize);
+				textRect.field.setAttributeNS(null, "font-size", Math.max(fontSize.newSize, 0.016));
 
 				// reposition, node has become smaller or larger (reversed scaling to scaling layer)
-				textRect = getTextRect(textRect.field, textRect.node, textRect.onHoverOnly, fontSize, textRect.offSets, textRect.mainNode);
+				textRect = getTextRect(textRect.field, textRect.node, textRect.onHoverOnly, fontSize, textRect.offSets, textRect.mainNode, textRect.scaleStep || false);
 				if(!isNaN(textRect.left) && !isNaN(textRect.top)) {
 					textRect.field.setAttributeNS(null, "x", textRect.left);
 					textRect.field.setAttributeNS(null, "y", textRect.top);
@@ -2118,11 +2142,11 @@ var shingle = shingle || (function () {
 		function showNodeName(quadid, node, elemClass, onHoverOnly, nodeOffSets) {
 
 			// ensure unique elemid quick 'fix'
-			var elemid = instance + '-' + elemClass + node.nodeid;
+			var elemid = instance + '-' + elemClass + node.nodeid, textfield = null, textRect = null;
 
 			if(node.name && node.name != settings.NULLnodeName) {
 
-				var textfield = document.getElementById(elemid);
+				textfield = document.getElementById(elemid);
 
 				if (textfield == null) {
 					// text size
@@ -2145,8 +2169,9 @@ var shingle = shingle || (function () {
 
 					highlightednamescontainer.appendChild(textfield);
 
-				var x = node.x,
-					y = node.y,
+					var x = node.x,
+						y = node.y;
+
 					textRect = getTextRect(textfield, node, onHoverOnly, size, nodeOffSets);
 					textfield.setAttributeNS(null, "data-nodeid", node.nodeid);
 					textfield.setAttributeNS(null, "data-quadid", quadid);
@@ -2164,17 +2189,14 @@ var shingle = shingle || (function () {
 					// remember the textRect's belonging to the node text labels
 					textRects.push(textRect);
 				}
-				var fieldClassName = options.nodeTextClass + ' shingle-unselectable';
-				if(options.useMarkers) {
-					fieldClassName += ' ' + options.clickableClass;
-				}
+				var fieldClassName = options.nodeTextClass + ' shingle-unselectable ' + options.clickableClass;
 				if(node.nodeid == options.nodeId) {
 					fieldClassName += ' ' + options.initialNodeTextClass;
 				}
 				textfield.setAttributeNS(null, "class", fieldClassName);
 			}
 
-			return elemid;
+			return textRect;
 		}
 
 		function checkQuadToDraw(quadid) {
@@ -2202,12 +2224,15 @@ var shingle = shingle || (function () {
 							if(options.onQuadsDrawn) {
 								options.onQuadsDrawn();
 							}
-							if(!firstQuadDrawn) {
-								if(options.onFirstQuadDrawn) {
-									options.onFirstQuadDrawn();
-								}
-								firstQuadDrawn = true;
+							showInitialNodeNames();
+						}
+
+						// fix first quad drawn this was incorrect !
+						if(!firstQuadDrawn) {
+							if(options.onFirstQuadDrawn) {
+								options.onFirstQuadDrawn();
 							}
+							firstQuadDrawn = true;
 						}
 					}, 400);
 				}
@@ -2215,6 +2240,40 @@ var shingle = shingle || (function () {
 				return true;
 			}
 			return this;
+		}
+
+
+		function showInitialNodeNames() {
+			if(options.initialNodeNames) {
+
+				for (var community in initiallyHighlightedNodes) {
+					if (initiallyHighlightedNodes.hasOwnProperty(community)) {
+						var node = initiallyHighlightedNodes[community];
+						if(!node.textRect) {
+							node.textRect = showNodeName(node.quadid, node, options.highlightedNodeTextClass);
+							// note that a text box is created only once
+							if(node.textRect) node.textRect.scaleStep = currentScaleStep;
+						}
+					}
+				}
+			}
+		}
+
+		function showHideInitialNodeNames() {
+			if(options.initialNodeNames) {
+				for (var community in initiallyHighlightedNodes) {
+					if (initiallyHighlightedNodes.hasOwnProperty(community)) {
+						var node = initiallyHighlightedNodes[community];
+						if(node.textfield) {
+							if(node.scaleStep < currentScaleStep) {
+								node.textfield.style.display = 'none';
+							} else {
+							}
+						}
+					}
+				}
+				initiallyHighlightedNodes = {};
+			}
 		}
 
 		function makeLineElementEllipticalArc(x1, y1, x2, y2) {
@@ -2687,8 +2746,22 @@ var shingle = shingle || (function () {
 				gnod.setAttributeNS(null, "id", quadid);
 
 				for (var i = 0; i < graph["nodes"].length; i++) {
-					var circle = MakeNodeElement(quadid, graph["nodes"][i], nodemodeGraph);
+
+					var node = graph["nodes"][i];
+					node.quadid = quadid;
+
+					var circle = MakeNodeElement(quadid, node, nodemodeGraph);
 					gnod.appendChild(circle);
+
+					var zoomCorr = (currentScaleStep / zoomSteps.length),
+						curInitialNodeNameNodeMinSize = Math.max(options.initialNodeNameNodeMinSize * zoomCorr, 0);
+
+					if(options.initialNodeNames && node.size > curInitialNodeNameNodeMinSize) {
+						var idx = node.community + "";
+						if(!initiallyHighlightedNodes[idx] || initiallyHighlightedNodes[idx].size < node.size) {
+							initiallyHighlightedNodes[idx] = node;
+						}
+					}
 				}
 
 				if(options.selectNodes) {
@@ -3563,9 +3636,11 @@ var shingle = shingle || (function () {
 				// remove the first marker if max exceeded
 				if (visitedNodes.length > options.maxNrMarkers) {
 					// remove the oldest added visitednode / marker
-					// do not remove the initial nodeid if specified
+					// do not remove the initial nodeid if specified nor initially higlighted
 					if(options.nodeId && options.nodeId == visitedNodes[0]) {
 						visitedNodes.push(options.nodeId)
+					} else if(persistentNodeMarkers.length && persistentNodeMarkers.indexOf(visitedNodes[0]) > -1) {
+						visitedNodes.push(visitedNodes[0]);
 					} else {
 						removeMarker(visitedNodes[0]);
 					}
