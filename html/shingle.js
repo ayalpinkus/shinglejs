@@ -252,6 +252,8 @@ var shingle = shingle || (function () {
 				options.panning = false;
 				options.zoomSlider = false;
 			}
+
+			if(options.onBitmapChange) onBitmapChange = options.onBitmapChange;
 		}
 
 		// shingle dynamic styles module
@@ -1649,18 +1651,25 @@ var shingle = shingle || (function () {
 			}
 		}
 
-		function updateBitmapOpacity() {
+		function onBitmapChange(scaleSteps, currentScaleStep, initialStep, bitmapElement) {
+
+			var delta = currentScaleStep / scaleSteps, newOpacity;
+
+			if (delta>=0.75) {
+				newOpacity = 1;
+			} else if (delta>=0.5) {
+				newOpacity = 4*(delta-0.5);
+			} else {
+				newOpacity = 0;
+			}
+
+			bitmapcontainer.style.opacity = newOpacity;
+		}
+
+		function updateBitmapStyles() {
 			if (bitmapcontainer != null) {
 
-				var delta = currentScaleStep/zoomSteps.length;
-
-				if (delta>=0.75) {
-					bitmapcontainer.style.opacity = 1;
-				} else if (delta>=0.5) {
-					bitmapcontainer.style.opacity = 4*(delta-0.5);
-				} else {
-					bitmapcontainer.style.opacity = 0;
-				}
+				onBitmapChange(zoomSteps.length, currentScaleStep, startScaleStep, bitmapcontainer);
 			}
 		}
 
@@ -1671,7 +1680,7 @@ var shingle = shingle || (function () {
 			xmlHTTP.onload = function(e) {
 			    var blob = new Blob([this.response]);
 				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", window.URL.createObjectURL(blob));
-				updateBitmapOpacity();
+				updateBitmapStyles();
 				callback && callback();
 			};
 			xmlHTTP.send();
@@ -2772,11 +2781,9 @@ var shingle = shingle || (function () {
 			}
 
 			if (highlightednodescontainer != null) {
-
 				if (highlightednodescontainer.firstChild == null) {
-
 					var lookup = graph["idmap"][currentnodeid];
-					if (lookup) {
+					if (typeof lookup != "undefined") {
 						showInfoAbout(quadid, currentnodeid);
 					}
 				}
@@ -2918,7 +2925,7 @@ var shingle = shingle || (function () {
 				mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
 
 				zoom.value = level;
-				updateBitmapOpacity();
+				updateBitmapStyles();
 				onZoomFn && options[onZoomFn] && options[onZoomFn](level);
 				setSvgScales(done);
 
@@ -3034,7 +3041,6 @@ var shingle = shingle || (function () {
 		}
 
 		function changehighlightTo(quadid, nodeid) {
-
 
 			showInfoAbout(quadid, nodeid);
 			repositionMarkers();
