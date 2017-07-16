@@ -9,6 +9,20 @@
 #define BACKGROUND_WHITE
 
 
+void putpixel(unsigned char* pixels,int bitmapWidth, double alpha, int x,int y,int r,int g,int b)
+{
+  if (x<0) return;
+  if (x>=bitmapWidth) return;
+  if (y<0) return;
+  if (y>=bitmapWidth) return;
+
+  unsigned long offset = 3*(y*bitmapWidth+x);
+  pixels[offset] = (1-alpha)*pixels[offset] + alpha*r;
+  pixels[offset+1] = (1-alpha)*pixels[offset+1] + alpha*g;
+  pixels[offset+2] = (1-alpha)*pixels[offset+2] + alpha*b;
+}
+
+
 int main(int argc, char** argv)
 {
   if (argc<5)
@@ -161,14 +175,11 @@ if (y>bitmapWidth-1) y=bitmapWidth-1;
         //r=0; g=0; b=0;
 	//break;
     }
-
-    unsigned long offset = 3*(y*bitmapWidth+x);
-
-
-    pixels[offset] = (1-alpha)*pixels[offset] + alpha*r;
-    pixels[offset+1] = (1-alpha)*pixels[offset+1] + alpha*g;
-    pixels[offset+2] = (1-alpha)*pixels[offset+2] + alpha*b;
-
+    putpixel(pixels,bitmapWidth,alpha,x,y,r,g,b);
+    putpixel(pixels,bitmapWidth,alpha,x-1,y,r,g,b);
+    putpixel(pixels,bitmapWidth,alpha,x+1,y,r,g,b);
+    putpixel(pixels,bitmapWidth,alpha,x,y-1,r,g,b);
+    putpixel(pixels,bitmapWidth,alpha,x,y+1,r,g,b);
   }
 
 
