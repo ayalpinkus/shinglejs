@@ -31,6 +31,38 @@ shingle.js is designed to publish large interactive graphs online.
 <p>
 It consists of two parts: an off-line tool that chops your large network graph into tiles stored in json files, and a Javascript library which loads these tiles when in view and inserts and removes them from the DOM of a single svg element.
 </div>
+
+
+
+
+
+
+
+<h3>Steps for designing large graphs for online visualization</h3>
+Visualization through Shingle takes a bit of work. There are many steps involved to design an interactive network visualization that tells a story in a meaningful way.
+
+<h4>The data</h4>
+First, you need to start with data. It only makes sense to use shingle.js if you have a huge graph, in the millions of nodes and edges between the nodes. In addition, the nodes and edges may be annotated with weights, labels and categorizations.
+
+<h4>Layouts</h4>
+In order to draw the graph onto a two-dimensional plane, a "layout" has to be created: each node needs to be assigned a position in a two-dimensional plane. There are various algorithms that can do it, but OpenOrd seems to be the only program that can handle huge datasets, so OpenOrd seems to be the only option.
+<p>
+OpenOrd allows for tuning parameters, and it is useful to play with these parameters, to get the visualization just right. It may take several iterations to get the parameters right.
+
+<h4>Node and edge categorizations</h4>
+The nodes and edges may come with their own categorizations. Otherwise, some heuristic method may be used to determine categorizations. The current algorithms for community detection do not seem to be capable of handling truly large data sets.
+
+<h4>Visual design</h4>
+The graph needs to be designed visually to possibly match a visual brand and also to help tell the story. Node and edge sizes and colors and associated icons and labels need to be determined, as well as what information needs to be shown when clicking on a node or an edge.
+
+<h4>Importing the data into the shingle toolchain</h4>
+A front-end program needs to be written to convert the graph data into a format the Shingle processing tools can deal with.
+
+<h4>Deployment</h4>
+In the end, after that, the Shingle processing tools can run, reading in the graph and generating the tiles needed for the Javascript code to display the graph.
+
+
+
 <h3>Usage instructions</h3>
 The package contains an utility that chops up a graph into tiles, and a Javascript framework that allows display of the tiled graph, using svg.
 
@@ -269,6 +301,7 @@ The primary input file for the tool chain is a json file that contains an array 
 
 
 This distribution comes with one example graph, 'sampledata/random-graph_500000.json', which is the one you see in the banner above.
+
 
 
 <h3>License</h3>
