@@ -43,15 +43,7 @@
   transition-timing-function: linear;
 }
 
-.shingle-marker
-{
-/*
-  padding:0.075in;
-*/
-}
-
-.markertype-visited
-{
+.markertype-visited {
   background-color:#ffffff;
   border: 0.0250in solid #6c0606;
   color: #6c0606;
@@ -59,13 +51,11 @@
   cursor: pointer;
 }
 
-.markertype-visited:hover
-{
+.markertype-visited:hover {
   border: 0.0250in solid #bd4e4e;
   color: #bd4e4e;
   text-decoration:underline #bd4e4e;
 }
-
 
 .shingle-zoom {
   position:absolute;
