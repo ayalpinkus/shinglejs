@@ -6,6 +6,10 @@
     display: none;
 }
 
+.shingle-container .shingle-node-text {
+    background: none;
+}
+
 .shingle-container.shingle-with-focussed-node .shingle-info {
     display: inherit;
 }
@@ -76,4 +80,17 @@
   -moz-user-select: none;     /* Firefox all */
   -ms-user-select: none;      /* IE 10+ */
   user-select: none;          /* Likely future */      
+}
+
+.shingle-html-overlay,
+.shingle-html-overlay-el {
+  position: absolute;
+}
+
+.shingle-html-overlay {
+  pointer-events: none;
+}
+
+.shingle-html-overlay-el {
+  pointer-events: all;
 }

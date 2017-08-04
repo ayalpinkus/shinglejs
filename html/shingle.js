@@ -15,6 +15,19 @@ var shingle = shingle || (function () {
 				showBitmapOnly: false,
 				useMarkers: false,
 				maxNrMarkers: 8,
+				useHtmlOverlays: false,
+				animateZoom: false,
+				/*
+				animateZoom: {
+					duration: 2, // seconds are assumed
+					timing: 'linear'
+				},*/
+				animatePan: false,
+				/*
+				animatePan: {
+					duration: 0.66, // seconds are assumed
+					timing: 'linear'
+				},*/
 				// use in cases where other elements may overlap the graph
 				// e.g. markerOffsets: { top: 10, right: 10, bottom: 0, left: 10 }
 				markerOffsets: null,
@@ -38,7 +51,7 @@ var shingle = shingle || (function () {
 				staticMap: false,
 				zoomSlider: true,
 				zoomStep: 5,
-				dragTimeThreshold: 100,
+				dragTimeThreshold: 200,
 				scrollZoomInitDelay: 400,
 				scrollZoom: true,
 				showRelatedNodeNames: false,
@@ -72,6 +85,8 @@ var shingle = shingle || (function () {
 				nodeColors: [[240, 188, 0], [178, 57, 147], [39, 204, 122], [21, 163, 206], [235, 84, 54], [138, 103, 52], [255, 116, 116], [120, 80, 171], [48, 179, 179], [211, 47, 91]],
 				defaultNodeColor: [214, 29, 79],
 				edgeClass: 'shingle-edge',
+				htmlOverlayClass: 'shingle-html-overlay',
+				htmlOverlayNodeContainerClass: 'shingle-html-overlay-el',
 				edgeColor: [213, 213, 213],
 				edgeHighlightColor: [0, 0, 0],
 				fontColor: [5, 87, 119, 0.6],
@@ -216,9 +231,8 @@ var shingle = shingle || (function () {
 			doRepositionMarkers = null,
 			visitedNodes = [], markerIdx = {},
 			initiallyHighlightedNodes = {}, persistentNodeMarkers = [], initialQuads = true,
-			revScaledNodes = [];
-
-
+			revScaledNodes = [],
+			scaleTimeout = 0;
 
 		// defaults
 		function initDefaults() {
@@ -262,10 +276,12 @@ var shingle = shingle || (function () {
 			if(options.onBitmapChange) onBitmapChange = options.onBitmapChange;
 
 			// extra zoom is available, but now only for WebKit browsers
-			if(options.extraZoom > 0 && (isFirefox() || isIE())) options.extraZoom = 0;
 
 			// useNonScalingStrokeForNodes can only be used when using the line hack
 			if(circleTag != "line" || !svg12T) options.useNonScalingStrokeForNodes = false;
+
+			// timeout for scaling to be used with animated
+			scaleTimeout = options.animateZoom.duration ? options.animateZoom.duration * 1000 : 0;
 		}
 
 		// shingle dynamic styles module
@@ -376,6 +392,90 @@ var shingle = shingle || (function () {
 				elapsed: elapsed
 			}
 		}, dragTimer = new Timer();
+
+		// html overlay
+		var htmlOverlay = (function() {
+
+			var el = null,
+				dims = {
+					top: 0,
+					right: 0,
+					bottom: 0,
+					left: 0
+				},
+				nodeEls = {};
+
+			function activate() {
+				el = document.createElement('div');
+				el.className = options.htmlOverlayClass;
+				return el;
+			}
+
+			// move along while dragging, call render to reset
+			function move(delta) {
+				el.style.top = (dims.top + delta.y) + 'px';
+				el.style.left = (dims.left + delta.x) + 'px';
+			}
+
+			function set(rect) {
+				dims.top = rect.top;
+				dims.left = rect.left;
+				dims.width = rect.width;
+				dims.height = rect.height;
+			}
+
+			function render(rect) {
+				if(rect) {
+					set(rect);
+				}
+				el.style.top = dims.top + 'px';
+				el.style.left = dims.left + 'px';
+				el.style.width = dims.width + 'px';
+				el.style.height = dims.height + 'px';
+			}
+
+			function isActive() {
+				return (el !== null);
+			}
+
+			function addNode(data) {
+				var tEl = document.createElement('div');
+				tEl.className = options.htmlOverlayNodeContainerClass;
+
+				var x = data.x + Math.abs(mapinfo["quadtree"]["xmin"]),
+					y = data.y + Math.abs(mapinfo["quadtree"]["ymin"]);
+
+				tEl.setAttribute('data-x', x);
+				tEl.setAttribute('data-y', y);
+
+				tEl.style.top = ((y / mapinfo["totalMapHeight"]) * 100) + '%';
+				tEl.style.left = ((x / mapinfo["totalMapWidth"]) * 100) + '%';
+				el.appendChild(tEl);
+				nodeEls[data.nodeid] = tEl;
+			}
+
+			function removeNode(nodeid) {
+				var tEl = nodeEls[nodeid];
+				if(tEl) {
+					el.removeChild(tEl);
+					delete nodeEls[nodeid];
+				}
+			}
+
+			function getNode(nodeid) {
+				return nodeEls[nodeid];
+			}
+
+			return {
+				activate: activate,
+				move: move,
+				render: render,
+				isActive: isActive,
+				addNode: addNode,
+				removeNode: removeNode,
+				getNode: getNode
+			};
+		})();
 
 		function ajaxRequest() {
 
@@ -807,10 +907,13 @@ var shingle = shingle || (function () {
 			return quadsDrawn[quadid] || false;
 		}
 
+
 		function containerWorldRect() {
 
 			var datarectPixels = getBoundingrectDims(),
 				containerRectPixels = getMapRect();
+
+			if (htmlOverlay.isActive()) htmlOverlay.render(datarectPixels);
 
 			scaleX = ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]) / (datarectPixels.right - datarectPixels.left),
 			scaleY = ((1.0 * mapinfo["quadtree"]["ymax"]) - mapinfo["quadtree"]["ymin"]) / (datarectPixels.bottom - datarectPixels.top);
@@ -1255,6 +1358,13 @@ var shingle = shingle || (function () {
 
 				if(!options.useNonScalingStrokeForNodes) {
 
+					// animate
+					if(options.animateZoom) {
+						graphCSS.set('.' + options.mapClass + ' .' + options.nodeClass, {
+							'transition': 'font-size ' + options.animateZoom.duration + 's ' + options.animateZoom.timing
+						});
+					}
+
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
 						'font-size': scaleFactorM + 'px'
 					});
@@ -1282,6 +1392,28 @@ var shingle = shingle || (function () {
 
 				stepScale *= 1.1;
 				zoomStep++;
+			}
+
+			// animate text
+			if(options.animateZoom) {
+				graphCSS.set('.' + options.mapClass + ' .' + options.nodeTextClass, {
+					'transition': 'transform ' + options.animateZoom.duration + 's ' + options.animateZoom.timing
+				});
+				graphCSS.set('.' + options.mapClass + ' .' + options.highlightedNodeTextClass, {
+					'transition': 'transform ' + options.animateZoom.duration + 's ' + options.animateZoom.timing
+				});
+			}
+
+			// animate layer zoom and pan
+			if(options.animateZoom) {
+				graphCSS.set('.' + options.scaleElClass, {
+					'transition': 'transform ' + options.animateZoom.duration + 's ' + options.animateZoom.timing
+				});
+			}
+			if(options.animatePan) {
+				graphCSS.set('.' + options.translationElClass + ':not(.moving)', {
+					'transition': 'transform ' + options.animatePan.duration + 's ' + options.animatePan.timing
+				});
 			}
 
 			// debug quad hover visual indicators
@@ -1558,7 +1690,53 @@ var shingle = shingle || (function () {
 			}
 		}
 
+		function isNearEnough(val1, val2, tolerance) {
+			var toleranceV = tolerance || 0;
+			return (val2 > val1 - toleranceV && val2 < val1 + toleranceV);
+		}
+
+		function detectNodeClicked(x, y, tolerance) {
+
+			var screenrect = containerWorldRect(),
+				nodes = [];
+
+			// check nodes in visible quads, only visible van be clicked
+			for (var quadId in quadsDrawn) {
+
+				if(!quadsDrawn.hasOwnProperty(quadId)) continue;
+
+				var	quad = graphs[quadId];
+
+				if (quad.header != null) {
+					if (quadIntersects(screenrect, quad.header)) {
+						for (var i = 0; i < quad.nodes.length; i++) {
+							var node = quad.nodes[i];
+							if(isNearEnough(x, node.x, tolerance) && isNearEnough(y, node.y, tolerance)) {
+								nodes.push({
+									nodeId: node.nodeid,
+									quadId: quadId,
+									x: node.x,
+									y: node.y,
+									deltaX: Math.abs(x - node.x),
+									deltaY: Math.abs(y - node.y)
+								});
+							}
+						}
+					}
+				}
+			}
+
+			if(nodes.length) {
+				nodes.sort(function(a, b) {
+				  return (a.deltaX - b.deltaX) + (a.deltaY - b.deltaY);
+				});
+			}
+
+			return nodes[0];
+		}
+
 		function handleMouseDown(evt) {
+
 			dragTimer.start();
 
 			dragCoordinates.x = evt.pageX;
@@ -1571,6 +1749,9 @@ var shingle = shingle || (function () {
 			sfactor = (rect.right - rect.left) / ((1.0 * mapinfo["quadtree"]["xmax"]) - mapinfo["quadtree"]["xmin"]);
 
 			dragging = true;
+
+			// prevent animations while dragging
+			translationEl.classList.add('moving');
 		}
 
 		function handleMouseMove(evt) {
@@ -1584,13 +1765,14 @@ var shingle = shingle || (function () {
 				//@@@ removing the following line causes the map to not render well when zoomed in on Firefox, no idea why...
 				debugLog("<p style=\"color:#ffffff\">" + 0 + "</p>");
 
-				/* 
-				 * Seems to be a bug in Firefox: when selecting node for first time, than drag map,
-				 * screen becomes white. Solution for now is to remove names just before it starts to drag the map.
-				 */
-				if (highlightednamescontainer != null) {
-					highlightednamescontainer.style.display = "none";
+				// the overlay should 'drag along'
+				if (htmlOverlay.isActive()) {
+					htmlOverlay.move({
+						x: deltaX,
+						y: deltaY
+					});
 				}
+
 				setSvgTranslations();
 			}
 		}
@@ -1612,27 +1794,51 @@ var shingle = shingle || (function () {
 			if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
 				setBoundingrectDims();
 
+				// class for translate animations disabling while dragging
+				translationEl.classList.remove('moving');
+
+				// reset the overlay
+				if (htmlOverlay.isActive()) htmlOverlay.render();
+
 				findQuadsToDraw();
 				findQuadsToRemove();
-
-				if (highlightednamescontainer != null) {
-					highlightednamescontainer.style.display = "inherit";
-				}
 			}
 
 			// NOTE this might need some refactoring, as this is also intended
 			// to prevent a clicked on node (different event) from getting unhighlighted
 			if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
-				// no panning, a click outside a node
-				// use a threshold in milliseconds to make sure this is
-				// is an intended click
+
+				// no panning, just a click
 				if(dragTimer.elapsed() > options.dragTimeThreshold) {
+					//
+					// use a threshold in milliseconds to make sure this is
+					// is an intended 'long' click to de-select a node
+					//
 					removeInfoAbout();
 					if(options.containerWithFocusClass) {
 						options.el.classList.remove(options.containerWithFocusClass);
 					}
 					options.onBlur && options.onBlur(currentScaleStep);
 					syncInfoDisplay(false);
+				} else {
+					//
+					// 'short' click might be an intended node click
+					// just outside a node or a node click bubbling up
+					// because the node handler did not catch the click
+					// (e.g. escaped mouse click due to bug in firefox)
+					//
+					// map the event coordinates on the map
+					var rect = containerWorldRect(),
+						left = rect[0], top = rect[1],
+						x = (evt.pageX * scaleX) + left,
+						y = (evt.pageY * scaleY) + top,
+						nodeClicked = detectNodeClicked(x, y, 0.05);
+
+					if(nodeClicked) {
+						showInfoAbout(nodeClicked.quadId, nodeClicked.nodeId);
+						options.onNodeClick && options.onNodeClick(nodeClicked.quadId, nodeClicked.nodeId, currentScaleStep);
+					}
+
 				}
 			} else {
 				// pan
@@ -1770,6 +1976,7 @@ var shingle = shingle || (function () {
 
 			options.el.style.width = options.width;
 			options.el.classList.add(options.containerClass);
+
 			mfrmap.style.width = options.width;
 			mfrmap.style.height = options.height;
 
@@ -2312,8 +2519,14 @@ var shingle = shingle || (function () {
 				textfield.setAttributeNS(null, "class", fieldClassName);
 			}
 
+			// create node overlay when active and focus or hoverin defined
+			if (htmlOverlay.isActive() && (options.onHoverIn || options.onFocus)) {
+				htmlOverlay.addNode(node);
+			}
+
 			return textRect;
 		}
+
 
 		function revScaleNode(nodEl, screenrect) {
 
@@ -2321,7 +2534,7 @@ var shingle = shingle || (function () {
 			if(revScaleNodesJSStep < 0) return false;
 
 			// only reverse scale when jsFactor < 1 (which is the scale to be applied)
-			var s = zoomStepsNodeScales[currentScaleStep].jsFactor / 2;
+			var s = zoomStepsNodeScales[currentScaleStep].jsFactor;
 
 			if(s >= 1) return false;
 
@@ -2342,6 +2555,7 @@ var shingle = shingle || (function () {
 			nodEl.setAttributeNS(null, 'display', 'none');
 			nodEl.setAttributeNS(null, 'transform', 'matrix(' + s + ' 0 0 ' + s + ' ' + revX + ' ' + revY + ')');
 			nodEl.setAttributeNS(null, 'display', 'initial');
+
 			revScaledNodes.push(nodEl);
 
 			return true;
@@ -2351,13 +2565,14 @@ var shingle = shingle || (function () {
 
 			var quadDrawn = quadsDrawn[quadId];
 
-			if(quadDrawn.nodes && quadDrawn.nodes.parentNode && quadDrawn.nodes.firstChild) {
+			if(quadDrawn.nodes && quadDrawn.nodes.firstChild) {
 
-				var children = quadDrawn.nodes.childNodes;
+				var children = quadDrawn.nodes.childNodes,
+					rect = screenrect || containerWorldRect();
 
 				for (var i = 0; i < children.length; i++) {
 					var nodEl = children[i];
-					revScaleNode(nodEl, screenrect);
+					revScaleNode(nodEl, rect);
 				};
 			}
 		}
@@ -2371,9 +2586,7 @@ var shingle = shingle || (function () {
 				// reset
 				for (var i = revScaledNodes.length - 1; i >= 0; i--) {
 					var nodEl = revScaledNodes[i];
-					if(nodEl) {
-						nodEl.setAttributeNS(null, 'transform', '');
-					}
+					if(nodEl) nodEl.setAttributeNS(null, 'transform', '');
 					revScaledNodes.splice(i, 1);
 				}
 			}
@@ -2744,6 +2957,7 @@ var shingle = shingle || (function () {
 					circle.setAttributeNS(null, "data-name", node.name);
 					circle.setAttributeNS(null, "data-nodeid", "" + node.nodeid);
 					circle.setAttributeNS(null, "data-nodevalue", "" + node.size);
+					circle.setAttributeNS(null, "data-radius", "" + nodeRadius);
 					circle.setAttributeNS(null, "show-name-on-hover", textId);
 					circle.setAttributeNS(null, "data-x", x2);
 					circle.setAttributeNS(null, "data-y", y);
@@ -2772,7 +2986,6 @@ var shingle = shingle || (function () {
 					e.cancelBubble = true;
 
 					var name = node.getAttribute('data-name');
-
 					if(name && (name != settings.NULLnodeName || settings.enableNULLnameNodes)) {
 						var nodeId = node.getAttribute('data-nodeid'),
 							quadId = node.getAttribute('data-quadid');
@@ -2798,11 +3011,12 @@ var shingle = shingle || (function () {
 					if(node.tagName == circleTag || (node.tagName == 'g' && node.getAttributeNS(null, "class") == circleTag)) {
 
 						var quadId = node.getAttribute('data-quadid'),
-							nodeId = node.getAttribute('data-nodeid');
+							nodeId = node.getAttribute('data-nodeid'),
+							name = node.getAttribute('data-name');
 
 						hoverAction && clearTimeout(hoverAction);
 						hoverAction = setTimeout(function() {
-							hoverIn(quadId, nodeId);
+							hoverIn(quadId, nodeId, name);
 							hoverAction = false;
 						}, options.hoverDelay);
 					}
@@ -2857,6 +3071,7 @@ var shingle = shingle || (function () {
 
 		function addTextEvents(container) {
 			container.addEventListener('mousedown', function (e) {
+
 				var text = e.target;
 				if(text) {
 					e.cancelBubble = true;
@@ -2954,7 +3169,7 @@ var shingle = shingle || (function () {
 
 			// NODES
 			// nodes container for quad
-			var gnod;
+			var gnod, revScaleCached = false;
 
 			if(graph.els.gnod == null) {
 				gnod = document.createElementNS(xmlns, "g");
@@ -2986,6 +3201,7 @@ var shingle = shingle || (function () {
 				}
 			} else {
 				gnod = graph.els.gnod;
+				revScaleCached = (revScaleNodesJSStep >= 0 && zoomStepsNodeScales[currentScaleStep].jsFactor < 1);
 			}
 
 			if (highlightednodescontainer != null) {
@@ -2997,9 +3213,13 @@ var shingle = shingle || (function () {
 				}
 			}
 
-			nodescontainer.appendChild(gnod);
-
 			if(quadsDrawn[quadid]) quadsDrawn[quadid].nodes = gnod;
+			if(revScaleCached) {
+				// revscale nodes that were create earlier and cached
+				revScaleQuadNodes(quadid, containerWorldRect(), gnod);
+			}
+
+			nodescontainer.appendChild(gnod);
 
 			// DEBUG
 			if (options.debugQuads && graph["header"]) {
@@ -3083,7 +3303,7 @@ var shingle = shingle || (function () {
 		function execSvgScales(finished) {
 
 			// scale scaling layer
-			scalingEl.setAttribute('transform', 'scale(' + currentScale + ')');			
+			scalingEl.setAttribute('transform', 'scale(' + currentScale + ')');	
 
 			// scale texts
 			scaleTextRects();
@@ -3093,11 +3313,12 @@ var shingle = shingle || (function () {
 			// try to minimize forced reflow here, we should determine completion
 			// of the translation, for now use a little timeout ..
 			execSvgScales(finished);
+
 			setTimeout(function() {
 				setBoundingrectDims();
 				finished && finished();
 				repositionMarkers();
-			}, 10);
+			}, scaleTimeout || 10);
 		}
 
 		function setSvgTranslations() {
@@ -3352,8 +3573,10 @@ var shingle = shingle || (function () {
 							showNodeName(this.quadid, node1, options.highlightedNodeTextClass);
 
 							//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
-							var nodeData = getNodesData(quadid, nodeid);
-							options.onFocus && options.onFocus(quadid, nodeid, nodeData);
+							var nodeData = getNodesData(quadid, nodeid),
+								nodeOverlay = htmlOverlay.isActive() ? htmlOverlay.getNode(this.nodeid) : null;
+
+							options.onFocus && options.onFocus(quadid, nodeid, nodeData, nodeOverlay);
 						}
 					}
 				}
@@ -3586,10 +3809,10 @@ var shingle = shingle || (function () {
 				svg.classList.remove('with-focus');
 
 				currentHighlightedNode.unhighlight();
-//
-// this has weird effects when deselecting a node and surrounding nodes and edges just dissapear
-// disable for now and look into
-//				forgetHighlightedNodesLoaded();
+				//
+				// this has weird effects when deselecting a node and surrounding nodes and edges just dissapear
+				// disable for now and look into later
+				//				forgetHighlightedNodesLoaded();
 
 				// remove highlighted lines
 				while (highlightedlinescontainer.firstChild) {
@@ -3620,8 +3843,11 @@ var shingle = shingle || (function () {
 			addMarker(quadid, nodeid);
 		}
 
-		function hoverIn(quadid, nodeid) {
-			options.onHoverIn && options.onHoverIn(quadid, nodeid);
+		function hoverIn(quadid, nodeid, name) {
+
+			var nodeOverlay = htmlOverlay.isActive() ? htmlOverlay.getNode(this.nodeid) : null;
+
+			options.onHoverIn && options.onHoverIn(quadid, nodeid, name, nodeOverlay);
 
 			currentHighlightedNode.unhighlight();
 			currentHighlightedNode.sethighlighted(quadid, nodeid);
@@ -3913,6 +4139,11 @@ var shingle = shingle || (function () {
 				markercontainer.style.height = options.height;
  
 				shinglecontainer.appendChild(markercontainer);
+			}
+
+			// activate overlay if used
+			if(options.useHtmlOverlays) {
+				shinglecontainer.appendChild(htmlOverlay.activate());
 			}
 
 			zoom = document.createElement("input");
