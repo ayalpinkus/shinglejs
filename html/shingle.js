@@ -15,6 +15,7 @@ var shingle = shingle || (function () {
 				showBitmapOnly: false,
 				useMarkers: false,
 				maxNrMarkers: 8,
+				nodeHistorySize: 50,
 				useHtmlOverlays: false,
 				animateZoom: false,
 				/*
@@ -32,6 +33,7 @@ var shingle = shingle || (function () {
 				// e.g. markerOffsets: { top: 10, right: 10, bottom: 0, left: 10 }
 				markerOffsets: null,
 				initialNodeNames: false,
+				showInitialNodeNames: true,
 				initialNodeNameNodeMinSize: 0,
 				markerCoverAreas: [],
 				NULLnodeName: 'unknown',
@@ -51,9 +53,12 @@ var shingle = shingle || (function () {
 				staticMap: false,
 				zoomSlider: true,
 				zoomStep: 5,
-				dragTimeThreshold: 200,
+				clickToBlurTimeThreshold: 100,
 				scrollZoomInitDelay: 400,
 				scrollZoom: true,
+				// note when set to false the no node names will be displayed at all
+				showNodeNames: true,
+				showMainNodeNames: true,
 				showRelatedNodeNames: false,
 				//showRelatedNodeNames: true,
 				//showRelatedNodeNames: 'hover',
@@ -103,12 +108,14 @@ var shingle = shingle || (function () {
 				infoSyncDelay: 100,
 				//lineType: "Straight",
 				lineType: "EllipticalArc",
-				hoverDelay: 66,
+				hoverDelay: 366,
 				debug: false,
 				debugQuads: false,
 				calcBoundingRectDimsMethodExperimental: false,
 				useMultipleQuadsLoader: true,
-				quadDisplayThreshold: 0.25
+				quadDisplayThreshold: 0.25,
+				edgeWidthFactor: 1,
+				highlightedEdgeWidthFactor: 2
 			};
 
 		function isFirefox() {
@@ -232,7 +239,8 @@ var shingle = shingle || (function () {
 			visitedNodes = [], markerIdx = {},
 			initiallyHighlightedNodes = {}, persistentNodeMarkers = [], initialQuads = true,
 			revScaledNodes = [],
-			scaleTimeout = 0;
+			scaleTimeout = 0,
+			pxFactor = null;
 
 		// defaults
 		function initDefaults() {
@@ -283,6 +291,36 @@ var shingle = shingle || (function () {
 			// timeout for scaling to be used with animated
 			scaleTimeout = options.animateZoom.duration ? options.animateZoom.duration * 1000 : 0;
 		}
+
+		// node history
+		// NOTE we might want to replace the visitedNodes with this too
+		// this is used only with markers now, BUT it always keeps the initial node ..
+		var nodeHistory = (function() {
+
+			var nodes = [];
+
+			function previous() {
+				if (nodes.length < 2) return null;
+				return nodes[nodes.length - 2];
+			}
+
+			function last() {
+				if (!nodes.length) return null;
+				return nodes[nodes.length - 1];
+			}
+
+			function push(nodeid) {
+				if (nodeid === last()) return;
+				if ((nodes.length + 1) > options.nodeHistorySize) nodes.shift();
+				nodes.push(nodeid);
+			}
+
+			return {
+				previous: previous,
+				last: last,
+				push: push
+			}
+		})();
 
 		// shingle dynamic styles module
 	    var graphCSS = (function() {
@@ -396,18 +434,117 @@ var shingle = shingle || (function () {
 		// html overlay
 		var htmlOverlay = (function() {
 
-			var el = null,
+			var nodeType = function(settings) {
+
+					var self = this;
+
+					this.position = {
+						x: settings.position.x || null,
+						y: settings.position.y || null
+					};
+					this.nodeid = settings.nodeid || null;
+					this.quadid = settings.quadid || null;
+					this.community = settings.community || null;
+					this.text = settings.text || null;
+					this.el = null;
+					this.highlighted = (((settings.mode || false) & nodemodeflagHighlighted) != 0);
+					this.nodeEl = null;
+					this.radius = 0;
+					this.rendered = false;
+
+					this.render = function(content, events) {
+
+						if(!this.nodeid || !this.quadid) return ;
+
+						// get the node
+						this.nodeEl = document.getElementById(getNodeId(this.quadid, this.nodeid, this.highlighted));
+
+						if(this.nodeEl === null) return false;
+
+						// recreate if already there
+						this.detach();
+
+						// needed to correct position
+						this.radius = this.nodeEl.getAttributeNS(null, 'data-radius');
+
+						this.el = document.createElement('div');
+						this.el.className = options.htmlOverlayNodeContainerClass;
+
+						this.el.setAttribute('data-x', this.position.x);
+						this.el.setAttribute('data-y', this.position.y);
+
+						if(content) {
+							if(content instanceof HTMLElement) {
+								this.el.appendChild(content);
+							} else {
+								this.el.innerHTML = content;
+							}
+						}
+
+						this.el.style.position = 'absolute';
+						this.el.style.top = ((this.position.y / mapinfo["totalMapHeight"]) * 100) + '%';
+						this.el.style.left = ((this.position.x / mapinfo["totalMapWidth"]) * 100) + '%';
+
+						if(this.radius > 0) {
+							this.el.style.margin = (-1 * this.radius / pxFactor) + 'px';
+							this.el.style.padding = (this.radius / pxFactor) + 'px';
+						}
+
+						if(events && events.length) {
+							var clickEvent = false;
+							events.forEach(function(event) {
+								var eventName = Object.keys(event)[0];
+								if(eventName) {
+									this.el.addEventListener(eventName, event[eventName]);
+									if(eventName == 'click') clickEvent = true;
+								}
+							}, this);
+							if(!clickEvent && this.quadid && this.nodeid) {
+								this.el.addEventListener('click', function(e) {
+									showInfoAbout(self.quadid, self.nodeid);
+									options.onNodeClick && options.onNodeClick(self.quadid, self.nodeid, currentScaleStep);
+								});							
+							}
+						}
+
+						el.appendChild(this.el);
+						this.rendered = true;
+					}
+
+					this.hideText = function() {
+						if(this.text && this.text.field) this.text.field.style.display = 'none';
+					}
+
+					this.showText = function() {
+						if(this.text && this.text.field) this.text.field.style.display = 'inherit';
+					}
+
+					this.checkText = function(text) {
+						if(text) this.text = text;
+					}
+
+					this.detach = function() {
+						if(this.el) {
+							this.el.innerHTML = '';
+							el.removeChild(this.el);
+							this.rendered = false;
+						}
+					}
+				},
+				el = null,
 				dims = {
 					top: 0,
 					right: 0,
 					bottom: 0,
 					left: 0
 				},
-				nodeEls = {};
+				nodes = {};
 
 			function activate() {
-				el = document.createElement('div');
-				el.className = options.htmlOverlayClass;
+				if (options.onHoverIn || options.onFocus) {
+					el = document.createElement('div');
+					el.className = options.htmlOverlayClass;
+				}
 				return el;
 			}
 
@@ -438,32 +575,49 @@ var shingle = shingle || (function () {
 				return (el !== null);
 			}
 
-			function addNode(data) {
-				var tEl = document.createElement('div');
-				tEl.className = options.htmlOverlayNodeContainerClass;
+			function addNode(nodeData) {
 
-				var x = data.x + Math.abs(mapinfo["quadtree"]["xmin"]),
-					y = data.y + Math.abs(mapinfo["quadtree"]["ymin"]);
+				var node = nodes[nodeData.nodeid];
 
-				tEl.setAttribute('data-x', x);
-				tEl.setAttribute('data-y', y);
+				if(node) {
+					node.checkText(nodeData.text);
+					return node;
+				}
 
-				tEl.style.top = ((y / mapinfo["totalMapHeight"]) * 100) + '%';
-				tEl.style.left = ((x / mapinfo["totalMapWidth"]) * 100) + '%';
-				el.appendChild(tEl);
-				nodeEls[data.nodeid] = tEl;
+				node = new nodeType({
+					position: {
+						x: nodeData.x + Math.abs(mapinfo["quadtree"]["xmin"]),
+						y: nodeData.y + Math.abs(mapinfo["quadtree"]["ymin"])
+					},
+					text: nodeData.text,
+					mode: nodeData.highlighted,
+					quadid: nodeData.quadid,
+					nodeid: nodeData.nodeid,
+					community: nodeData.community || false
+				});
+
+				nodes[nodeData.nodeid] = node;
+				return node;
 			}
 
 			function removeNode(nodeid) {
-				var tEl = nodeEls[nodeid];
-				if(tEl) {
-					el.removeChild(tEl);
-					delete nodeEls[nodeid];
+				var node = nodes[nodeid];
+				if(node) {
+					node.detach();
+					delete nodes[nodeid];
 				}
 			}
 
 			function getNode(nodeid) {
-				return nodeEls[nodeid];
+				return nodes[nodeid] || null;
+			}
+
+			function clear() {
+				for (var nodeid in nodess) {
+					if (nodes.hasOwnProperty(nodeid)) {
+						removeNode(nodeid);
+					}
+				}
 			}
 
 			return {
@@ -473,7 +627,8 @@ var shingle = shingle || (function () {
 				isActive: isActive,
 				addNode: addNode,
 				removeNode: removeNode,
-				getNode: getNode
+				getNode: getNode,
+				clear: clear
 			};
 		})();
 
@@ -961,21 +1116,28 @@ var shingle = shingle || (function () {
 
 		function findQuadsNodeJs(screenrect) {
 
+			// make sure we do not send out of bounds values to the mapServer
+			// it will see all 404's as evil
+			var xmin = Math.max(screenrect[0], mapinfo["quadtree"]["xmin"]),
+				ymin = Math.max(screenrect[1], mapinfo["quadtree"]["ymin"]),
+				xmax = Math.min(screenrect[2], mapinfo["quadtree"]["xmax"]),
+				ymax = Math.min(screenrect[3], mapinfo["quadtree"]["ymax"]);
+
 			var url = options.graphPath + 'findQuads' +
-					'?xmin=' + screenrect[0] +
-					'&ymin=' + screenrect[1] +
-					'&xmax=' + screenrect[2] +
-					'&ymax=' + screenrect[3] +
-					'&quadDisplayThreshold=' + options.quadDisplayThreshold,
-					thisRect = JSON.stringify(screenrect);
+				'?xmin=' + xmin +
+				'&ymin=' + ymin +
+				'&xmax=' + xmax +
+				'&ymax=' + ymax +
+				'&quadDisplayThreshold=' + options.quadDisplayThreshold,
+				thisRect = JSON.stringify(screenrect);
 
 			currentRect = thisRect;
 
-			ajaxGet(url, function(response) {
-				if(response) {
+			ajaxGet(url, function (response) {
+				if (response) {
 					var quads = JSON.parse(response);
 
-					if(quads.length && thisRect == currentRect) {
+					if (quads.length && thisRect == currentRect) {
 
 						for (var i = 0; i < quads.length; i++) {
 							if (!drawnQuad(quads[i])) {
@@ -1237,6 +1399,7 @@ var shingle = shingle || (function () {
 					currentTranslateX = -entry[0];
 					currentTranslateY = -entry[1];
 					currentnodeid = nodeid;
+					nodeHistory.push(currentnodeid);
 					options.onNodeFound && options.onNodeFound();
 
 					if (quadLevels) {
@@ -1267,10 +1430,10 @@ var shingle = shingle || (function () {
 					'vector-effect': 'non-scaling-stroke', 'stroke-linecap': 'round'
 				});
 				graphCSS.set('.' + options.mapClass + ' .' + options.linescontainerClass + ' .' + options.edgeClass, {
-					'font-size': '1px'
+					'font-size': options.edgeWidthFactor + 'px'
 				});
 				graphCSS.set('.' + options.mapClass + ' .' + options.highlightedlinescontainerClass + ' .' + options.edgeClass, {
-					'font-size': '2px'
+					'font-size': options.highlightedEdgeWidthFactor + 'px'
 				});
 				if(options.useNonScalingStrokeForNodes) {
 					graphCSS.set('.' + options.mapClass + ' .' + options.nodeClass, {
@@ -1305,11 +1468,6 @@ var shingle = shingle || (function () {
 				'opacity': '0.78'
 			});
 
-			// for IE (absence of non-scaling strokes / svg1.2tiny) we need to know the pixel factor
-			var mapWidth = mapinfo["totalMapWidth"], dspWidth = options.el.clientWidth,
-				mapHeight = mapinfo["totalMapHeight"], dspHeight = options.el.clientHeight,
-				pxFactor = Math.min(mapWidth / dspWidth, mapHeight / dspHeight);
-
 			// use generated scaling steps, scaling using dynamic generated css
 			var dMinScale = (options.extraZoom > 0) ? minScale / options.extraZoom : minScale, stepScale = dMinScale;
 
@@ -1336,10 +1494,10 @@ var shingle = shingle || (function () {
 				// strictly only needed when SVG 1.2T not supported by the browser
 				if(!svg12T) {
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.linescontainerClass + ' .' + options.edgeClass, {
-						'stroke-width': Math.max((thisScale * 2 * pxFactor), 0.00017) + 'px'
+						'stroke-width': Math.max((thisScale * options.edgeWidthFactor * 2 * pxFactor), 0.00017) + 'px'
 					});
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.highlightedlinescontainerClass + ' .' + options.edgeClass, {
-						'stroke-width': Math.max((thisScale * 4 * pxFactor), 0.00033) + 'px'
+						'stroke-width': Math.max((thisScale * options.highlightedEdgeWidthFactor * 2 * pxFactor), 0.00033) + 'px'
 					});
 				}
 
@@ -1368,15 +1526,6 @@ var shingle = shingle || (function () {
 					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass, {
 						'font-size': scaleFactorM + 'px'
 					});
-
-					// the highlighted node is 1.5 times bigger
-					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' .' + options.nodeClass + '.' + options.highlightedNodeClass, {
-						'font-size': (scaleFactorM * 1.5) + 'px'
-					});
-					graphCSS.set('.' + options.mapClass + '.i' + instance + '-zoom-level-' + zoomStep + ' g.' + options.highlightedNodeClass + ' .' + options.nodeClass, {
-						'font-size': (scaleFactorM * 1.5) + 'px'
-					});
-
 				}
 
 				zoomStepsNodeScales[zoomStep] = {
@@ -1439,8 +1588,13 @@ var shingle = shingle || (function () {
 
 		function renderMap() {
 
-			minScale = mapinfo["averageQuadWidth"] / mapinfo["totalMapWidth"];
-			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapinfo["totalMapWidth"];
+			// for IE (absence of non-scaling strokes / svg1.2tiny) we need to know the pixel factor
+			var mapWidth = mapinfo["totalMapWidth"], dspWidth = options.el.clientWidth,
+				mapHeight = mapinfo["totalMapHeight"], dspHeight = options.el.clientHeight;
+
+			pxFactor = Math.min(mapWidth / dspWidth, mapHeight / dspHeight);
+			minScale = mapinfo["averageQuadWidth"] / mapWidth;
+			maxScale = (5 * mapinfo["averageQuadWidth"]) / mapWidth;
 
 			if (quadLevels) {
 				maxScale = 1;
@@ -1484,6 +1638,10 @@ var shingle = shingle || (function () {
 				// init the screenrect only
 				containerWorldRect();
 			}
+
+			options.onMapRender && options.onMapRender({
+				zoomLevel: currentScaleStep
+			});
 		}
 
 		function loadMapInfo(nodeid) {
@@ -1804,12 +1962,10 @@ var shingle = shingle || (function () {
 				findQuadsToRemove();
 			}
 
-			// NOTE this might need some refactoring, as this is also intended
-			// to prevent a clicked on node (different event) from getting unhighlighted
 			if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
-
 				// no panning, just a click
-				if(dragTimer.elapsed() > options.dragTimeThreshold) {
+				// WHICH is NOT catched by the node click event handlers
+				if(dragTimer.elapsed() > options.clickToBlurTimeThreshold) {
 					//
 					// use a threshold in milliseconds to make sure this is
 					// is an intended 'long' click to de-select a node
@@ -1818,16 +1974,15 @@ var shingle = shingle || (function () {
 					if(options.containerWithFocusClass) {
 						options.el.classList.remove(options.containerWithFocusClass);
 					}
-					options.onBlur && options.onBlur(currentScaleStep);
+					options.onBlur && options.onBlur(currentScaleStep, nodeHistory.last());
 					syncInfoDisplay(false);
-				} else {
-					//
-					// 'short' click might be an intended node click
+				}
+				if(isFirefox()) {
+					// due to bug in firefox ..
+					// .. this might be an intended node click
 					// just outside a node or a node click bubbling up
 					// because the node handler did not catch the click
-					// (e.g. escaped mouse click due to bug in firefox)
-					//
-					// map the event coordinates on the map
+					// on the node when extremely scaled up
 					var rect = containerWorldRect(),
 						left = rect[0], top = rect[1],
 						x = (evt.pageX * scaleX) + left,
@@ -1926,7 +2081,7 @@ var shingle = shingle || (function () {
 			}
 		}
 
-		function onBitmapChange(scaleSteps, currentScaleStep, initialStep, bitmapElement) {
+		function onBitmapChange(event, scaleSteps, currentScaleStep, initialStep, bitmapElement, filterContainer) {
 
 			var delta = currentScaleStep / scaleSteps, newOpacity;
 
@@ -1941,10 +2096,10 @@ var shingle = shingle || (function () {
 			bitmapcontainer.style.opacity = newOpacity;
 		}
 
-		function updateBitmapStyles() {
+		function updateBitmapStyles(event) {
 			if (bitmapcontainer != null) {
 
-				onBitmapChange(zoomSteps.length, currentScaleStep, startScaleStep, bitmapcontainer);
+				onBitmapChange(event, zoomSteps.length, currentScaleStep, startScaleStep, bitmapcontainer, svg);
 			}
 		}
 
@@ -1955,7 +2110,7 @@ var shingle = shingle || (function () {
 			xmlHTTP.onload = function(e) {
 			    var blob = new Blob([this.response]);
 				bitmapcontainer.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", window.URL.createObjectURL(blob));
-				updateBitmapStyles();
+				updateBitmapStyles('load');
 				callback && callback();
 			};
 			xmlHTTP.send();
@@ -2024,10 +2179,11 @@ var shingle = shingle || (function () {
             // Note IE9 does not support Blobs
             if(options.useBitmap && typeof(Blob) == "undefined") options.useBitmap = false;
             if(options.useBitmap) {
+
 				bitmapcontainer = document.createElementNS(xmlns, "image");
 				bitmapcontainer.setAttributeNS(null, "class", options.bitmapcontainerClass+" shingle-unselectable");
 				bitmapcontainer.setAttributeNS(null, "x", ""+xmin);
-				bitmapcontainer.setAttributeNS(null, "y", ""+ymin);
+				bitmapcontainer.setAttributeNS(null, "y", "" + ymin);
 				bitmapcontainer.setAttributeNS(null, "width",  ""+(xmax-xmin));
 				bitmapcontainer.setAttributeNS(null, "height", ""+(ymax-ymin));
 				bitmapcontainer.style.opacity = 0;
@@ -2110,6 +2266,11 @@ var shingle = shingle || (function () {
 		}
 
 		function setSvgDims() {
+
+			if(typeof mapinfo == "undefined") {
+				console.log('NOTICE: mapinfo not loaded');
+				return;
+			}
 
 			svgDims = {};
 
@@ -2459,6 +2620,8 @@ var shingle = shingle || (function () {
 
 		function showNodeName(quadid, node, elemClass, onHoverOnly, nodeOffSets, mainNode) {
 
+			if(!options.showNodeNames) return ;
+
 			var elemid = instance + '-' + node.nodeid, textfield = null, textRect = null;
 
 			if(node.name && node.name != settings.NULLnodeName) {
@@ -2517,11 +2680,6 @@ var shingle = shingle || (function () {
 					fieldClassName += ' ' + elemClass;
 				}
 				textfield.setAttributeNS(null, "class", fieldClassName);
-			}
-
-			// create node overlay when active and focus or hoverin defined
-			if (htmlOverlay.isActive() && (options.onHoverIn || options.onFocus)) {
-				htmlOverlay.addNode(node);
 			}
 
 			return textRect;
@@ -2664,9 +2822,21 @@ var shingle = shingle || (function () {
 					if (initiallyHighlightedNodes.hasOwnProperty(community)) {
 						var node = initiallyHighlightedNodes[community];
 						if(!node.textRect) {
-							node.textRect = showNodeName(node.quadid, node, options.defaultNodeTextClass, false, false, false);
+							if(options.showInitialNodeNames) {
+								node.textRect = showNodeName(node.quadid, node, options.defaultNodeTextClass, false, false, false);
+							} else {
+								// only overlay
+								node.textRect = {};
+							}
 							// note that a text box is created only once
 							if(node.textRect) node.textRect.scaleStep = currentScaleStep;
+							var nodeOverlay = null;
+							if(htmlOverlay.isActive()) {
+								var nodeData = Object.assign({}, node);
+								nodeData.text = node.textRect;
+								nodeOverlay = htmlOverlay.addNode(nodeData);
+							}
+							options.onInitialNodeName && options.onInitialNodeName(node.quadid, node.nodeid, node.name, nodeOverlay);
 						}
 					}
 				}
@@ -3022,14 +3192,20 @@ var shingle = shingle || (function () {
 					}
 				}
 			});
-			container.addEventListener('mouseleave', function (e) {
+			container.addEventListener('mouseout', function (e) {
+
 				var node = e.target;
+
 				if(node) {
-					if(!hoverAction) {
-						hoverOut();
-					} else {
-						clearTimeout(hoverAction);
-						hoverAction = false;
+
+					if(node.tagName == circleTag || (node.tagName == 'g' && node.getAttributeNS(null, "class") == circleTag)) {
+
+						if(!hoverAction) {
+							hoverOut();
+						} else {
+							clearTimeout(hoverAction);
+							hoverAction = false;
+						}
 					}
 				}
 			});
@@ -3093,6 +3269,38 @@ var shingle = shingle || (function () {
 			});
 
 			var hoverAction = false;
+
+			container.addEventListener('mouseover', function (e) {
+
+				var text = e.target;
+				if(text) {
+					e.cancelBubble = true;
+
+					var name = text.getAttribute('data-name');
+
+					if(name) {
+						var nodeId = text.getAttribute('data-nodeid'),
+							quadId = text.getAttribute('data-quadid');
+
+						hoverAction && clearTimeout(hoverAction);
+						hoverAction = setTimeout(function() {
+							hoverIn(quadId, nodeId, name);
+							hoverAction = false;
+						}, options.hoverDelay);
+					}
+				}
+			});
+			container.addEventListener('mouseleave', function (e) {
+				var text = e.target;
+				if(text) {
+					if(!hoverAction) {
+						hoverOut();
+					} else {
+						clearTimeout(hoverAction);
+						hoverAction = false;
+					}
+				}
+			});
 
 			if('ontouchstart' in document.documentElement) {
 				container.addEventListener('touchstart', function (evt) {
@@ -3353,7 +3561,7 @@ var shingle = shingle || (function () {
 				mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
 
 				zoom.value = level;
-				updateBitmapStyles();
+				updateBitmapStyles('scale');
 				onZoomFn && options[onZoomFn] && options[onZoomFn](level);
 				setSvgScales(done);
 			}, 20);
@@ -3401,6 +3609,7 @@ var shingle = shingle || (function () {
 
 			this.currentHighlightedId = null;
 			this.currentHighlightedIdHighlighted = null;
+			this.currentHighlightedOverlay = null;
 
 			this.ishighlighted = function() {
 				return (this.currentHighlightedId != null);
@@ -3427,16 +3636,12 @@ var shingle = shingle || (function () {
 			this.sethighlighted = function (quadid, nodeid) {
 				this.currentHighlightedId = getNodeId(quadid, nodeid, false);
 				this.currentHighlightedIdHighlighted = getNodeId(quadid, nodeid, true);
+				this.currentHighlightedOverlay = htmlOverlay.isActive() ? getOrCreateNodeOverlay(quadid, nodeid) : null;
 			};
 
 			this.highlight = function () {
 
 				var	circle = document.getElementById(this.currentHighlightedId);
-
-				// highight the node
-				if (circle) {
-					circle.classList.add(options.highlightedNodeClass);
-				}
 
 				// highight the highlighted node (highlighted nodes layer)
 				circle = document.getElementById(this.currentHighlightedIdHighlighted);
@@ -3445,7 +3650,6 @@ var shingle = shingle || (function () {
 					if(textid && textid != "false") {
 						document.getElementById(textid).style.display = "initial";
 					}
-					circle.classList.add(options.highlightedNodeClass);
 				}
 			};
 
@@ -3486,10 +3690,10 @@ var shingle = shingle || (function () {
 					setBoundingrectDims();
 
 					var rect = containerWorldRect();
-					if (node.x < rect[0] ||
-						node.y < rect[1] ||
-						node.x > rect[2] ||
-						node.y > rect[3])
+					if (node.x < (rect[0] * 0.88) ||
+						node.y < (rect[1] * 0.88) ||
+						node.x > (rect[2] * 0.88) ||
+						node.y > (rect[3]) * 0.88)
 					{
 						currentTranslateX = -node.x;
 						currentTranslateY = -node.y;
@@ -3570,13 +3774,22 @@ var shingle = shingle || (function () {
 							highlightednodescontainer.appendChild(circle);
 
 							clearNodeNames();
-							showNodeName(this.quadid, node1, options.highlightedNodeTextClass);
+							var textRect = null,
+								nodeOverlay = null;
+
+							if(options.showMainNodeNames) {
+								textRect = showNodeName(this.quadid, node1, options.highlightedNodeTextClass);
+							}
+
+							if(htmlOverlay.isActive()) {
+								var nodeData = Object.assign({}, node1);
+								nodeData.text = textRect;
+								nodeData.mode = nodemodeCentered;
+								nodeOverlay = htmlOverlay.addNode(nodeData);
+							}
 
 							//BUG #2 also here the node is sometimes not present in getNodesData, failing the onFocus
-							var nodeData = getNodesData(quadid, nodeid),
-								nodeOverlay = htmlOverlay.isActive() ? htmlOverlay.getNode(this.nodeid) : null;
-
-							options.onFocus && options.onFocus(quadid, nodeid, nodeData, nodeOverlay);
+							options.onFocus && options.onFocus(quadid, nodeid, node1, nodeOverlay, nodeHistory.previous());
 						}
 					}
 				}
@@ -3610,7 +3823,15 @@ var shingle = shingle || (function () {
 							d: Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2))
 						}
 
-						showNodeName(quadid, node2, options.highlightedNodeTextClass, showNameOnHover, offSets);
+						var textRect = showNodeName(quadid, node2, options.highlightedNodeTextClass, showNameOnHover, offSets);
+
+						if(htmlOverlay.isActive()) {
+							var nodeData = Object.assign({}, node2);
+							nodeData.text = textRect;
+							nodeData.mode = nodemodeCentered;
+							nodeData.quadid = quadid;
+							htmlOverlay.addNode(nodeData);
+						}
 					}
 				}
 			};
@@ -3631,7 +3852,10 @@ var shingle = shingle || (function () {
 								self.createEdge(toNode.quad, fromNode, node2);
 								if(node2.name && node2.name != settings.NULLnodeName) {
 									// callbacks for related nodes only when on map
-									options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, getNodesData(toNode.quad, node2.nodeid));
+									var nodeData = getNodesData(toNode.quad, node2.nodeid),
+										nodeOverlay = htmlOverlay.isActive() ? htmlOverlay.getNode(node2.nodeid) : null;
+
+										options.onFocusRelatedNode && options.onFocusRelatedNode(toNode.quad, node2.nodeid, nodeData, nodeOverlay);
 								}
 							}
 						}
@@ -3803,6 +4027,11 @@ var shingle = shingle || (function () {
 
 			if(currentHighlightedNode.ishighlighted()) {
 
+				if (last_async_showmfrinfo != null) {
+					last_async_showmfrinfo.j = 1000000;
+					last_async_showmfrinfo.cancel();
+				}
+
 				if(currentnodeid) setRectMainNode(currentnodeid, false);
 
 				currentnodeid = null;
@@ -3834,6 +4063,7 @@ var shingle = shingle || (function () {
 			svg.classList.add('with-focus')
 			currentHighlightedNode.sethighlighted(quadid, nodeid);
 			currentnodeid = nodeid;
+			nodeHistory.push(currentnodeid);
 
 			setRectMainNode(currentnodeid, true);
 
@@ -3843,20 +4073,26 @@ var shingle = shingle || (function () {
 			addMarker(quadid, nodeid);
 		}
 
+		function getOrCreateNodeOverlay(quadid, nodeid) {
+			var nodeOverlay = htmlOverlay.getNode(nodeid);
+			if(!nodeOverlay) {
+				var nodeData = getNodesData(quadid, nodeid);
+				nodeOverlay = htmlOverlay.addNode(nodeData);
+			}
+			return nodeOverlay;
+		}
+
 		function hoverIn(quadid, nodeid, name) {
-
-			var nodeOverlay = htmlOverlay.isActive() ? htmlOverlay.getNode(this.nodeid) : null;
-
-			options.onHoverIn && options.onHoverIn(quadid, nodeid, name, nodeOverlay);
 
 			currentHighlightedNode.unhighlight();
 			currentHighlightedNode.sethighlighted(quadid, nodeid);
+			options.onHoverIn && options.onHoverIn(quadid, nodeid, name, currentHighlightedNode.currentHighlightedOverlay);
 			currentHighlightedNode.highlight();
 		}
 
 		function hoverOut() {
-			options.onHoverOut && options.onHoverOut();
 
+			options.onHoverOut && options.onHoverOut(currentHighlightedNode.currentHighlightedOverlay);
 			currentHighlightedNode.unhighlight();
 		}
 
@@ -4220,6 +4456,7 @@ var shingle = shingle || (function () {
 
 		return {
 			hoverIn: hoverIn,
+			hoverOut: hoverOut,
 			changehighlightTo: changehighlightTo,
 			zoomIn: zoomIn,
 			zoomOut: zoomOut,
