@@ -94,3 +94,6 @@
 .shingle-html-overlay-el {
   pointer-events: all;
 }
+.shingle-html-overlay-el:hover {
+  cursor: pointer;
+}
