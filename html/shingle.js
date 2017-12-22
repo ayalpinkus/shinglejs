@@ -85,6 +85,11 @@ var shingle = shingle || (function () {
 					highlightedNodeClass: 'shingle-node-highlighted',
 					highlightedNodeTextClass: 'shingle-node-h-text',
 					defaultNodeTextClass: 'shingle-d-node-text',
+					communityClassPrefix: 'shingle-comm-',
+					communityClassHiddenPostfix: '-hidden',
+					hiddenCommunityCSS: {
+						opacity: 0
+					},
 					mapClass: 'shingle-map',
 					quadClass: 'shingle-quad',
 					debugQuadClass: 'shingle-debug-quad',
@@ -242,6 +247,7 @@ var shingle = shingle || (function () {
 				initiallyHighlightedNodes = {}, persistentNodeMarkers = [], initialQuads = true,
 				revScaledNodes = [],
 				scaleTimeout = 0,
+				communities = {},
 				pxFactor = null,
 				renderStart = null,
 				doRender = true;
@@ -1079,6 +1085,39 @@ var shingle = shingle || (function () {
 					return nodeColor(nodeB, 1);
 				}
 				return rgbA(options.edgeHighlightColor);
+			}
+
+			function communityClassName(community) {
+
+				var elClassName = options.communityClassPrefix + (community || 0);
+
+				// show / hide class newly used communities
+				// note we could use data-attrs (much cleaner)
+				// but classes still seem to perform better
+				if (typeof community !== "undefined") {
+					if (!communities[community]) {
+
+						var parentClassName4Hide = options.communityClassPrefix + community + options.communityClassHiddenPostfix;
+						communities[community] = parentClassName4Hide;
+
+						graphCSS.set('.' + options.mapClass + '.' + parentClassName4Hide + ' .' + elClassName, options.hiddenCommunityCSS);
+					}
+				}
+
+				// 
+				return elClassName;
+			}
+
+			function showCommunity(community) {
+				if (community && communities[community]) {
+					mfrmap.classList.remove(communities[community]);
+				}
+			}
+
+			function hideCommunity(community) {
+				if (community && communities[community]) {
+					mfrmap.classList.add(communities[community]);
+				}
 			}
 
 			// node size and edge width
@@ -2833,6 +2872,7 @@ var shingle = shingle || (function () {
 					if (elemClass) {
 						fieldClassName += ' ' + elemClass;
 					}
+					fieldClassName += ' ' + communityClassName(node.community);
 					textfield.setAttributeNS(null, "class", fieldClassName);
 				}
 				/*
@@ -2844,7 +2884,6 @@ var shingle = shingle || (function () {
 				*/
 				return textRect;
 			}
-
 
 			function revScaleNode(nodEl, screenrect) {
 
@@ -3020,31 +3059,33 @@ var shingle = shingle || (function () {
 				}
 			}
 
-			function makeLineElementEllipticalArc(x1, y1, x2, y2) {
+			function makeLineElementEllipticalArc(x1, y1, x2, y2, community1, community2) {
 
 				var line = document.createElementNS(xmlns, "path"),
 					dx = x2 - x1, dy = y2 - y1,
 					len = Math.sqrt(dx * dx + dy * dy),
 					r = 2 * len,
 					sweep = (dy < 0) ? "0" : "1",
-					d = "M" + x1 + "," + y1 + " A" + r + "," + r + " 0 0 " + sweep + " " + x2 + "," + y2;
+					d = "M" + x1 + "," + y1 + " A" + r + "," + r + " 0 0 " + sweep + " " + x2 + "," + y2,
+					edgeClass = options.edgeClass + ' ' + communityClassName(community1) + ' ' + communityClassName(community2);
 
 				line.setAttributeNS(null, "d", "" + d);
 				line.setAttributeNS(null, "fill", "none");
-				line.setAttributeNS(null, "class", options.edgeClass);
+				line.setAttributeNS(null, "class", edgeClass);
 
 				return line;
 			}
 
-			function makeLineElementStraight(x1, y1, x2, y2) {
+			function makeLineElementStraight(x1, y1, x2, y2, community1, community2) {
 
-				var line = document.createElementNS(xmlns, "line");
+				var line = document.createElementNS(xmlns, "line"),
+					edgeClass = options.edgeClass + ' ' + communityClassName(community1) + ' ' + communityClassName(community2);
 
 				line.setAttributeNS(null, "x1", "" + x1);
 				line.setAttributeNS(null, "y1", "" + y1);
 				line.setAttributeNS(null, "x2", "" + x2);
 				line.setAttributeNS(null, "y2", "" + y2);
-				line.setAttributeNS(null, "class", options.edgeClass);
+				line.setAttributeNS(null, "class", edgeClass);
 
 				return line;
 			}
@@ -3114,7 +3155,7 @@ var shingle = shingle || (function () {
 							var node2 = graphB["nodes"][pos],
 								x2 = graphB["nodes"][pos].x,
 								y2 = graphB["nodes"][pos].y,
-								line = makeLineElement(x1, y1, x2, y2);
+								line = makeLineElement(x1, y1, x2, y2, node1.community || 0, node2.community || 0);
 
 							if ((!node2.name || node2.name == settings.NULLnodeName) && settings.hideNULLnameNodes) drawEdge = false;
 
@@ -3175,7 +3216,9 @@ var shingle = shingle || (function () {
 				if (node.name && (node.name != settings.NULLnodeName || !settings.hideNULLnameNodes)) {
 
 					// base props
-					circle.setAttributeNS(null, "class", options.nodeClass);
+					var nodeClass = options.nodeClass + ' ' + communityClassName(node.community);
+
+					circle.setAttributeNS(null, "class", nodeClass);
 					circle.setAttributeNS(null, "id", id);
 					circle.setAttributeNS(null, "data-quadid", quadid);
 					circle.setAttributeNS(null, "data-name", node.name);
@@ -3239,7 +3282,9 @@ var shingle = shingle || (function () {
 				if (node.name && (node.name != settings.NULLnodeName || !settings.hideNULLnameNodes)) {
 
 					// base props
-					circle.setAttributeNS(null, "class", options.nodeClass);
+					var nodeClass = options.nodeClass + ' ' + communityClassName(node.community);
+
+					circle.setAttributeNS(null, "class", nodeClass);
 					circle.setAttributeNS(null, "id", id);
 					circle.setAttributeNS(null, "data-quadid", quadid);
 					circle.setAttributeNS(null, "data-name", node.name);
@@ -3696,6 +3741,7 @@ var shingle = shingle || (function () {
 
 			function doscale(e, done) {
 				var value = parseInt(e.target.value);
+				prevScaleStep = currentScaleStep;
 				scaleTo(value, done || false);
 			}
 
@@ -3719,11 +3765,14 @@ var shingle = shingle || (function () {
 					// uniform scale function for use with wheel, slider, api's
 					var onZoomFn = (prevScaleStep > level) ? 'onZoomIn' : 'onZoomOut';
 
+					// clear scaling step by class dyn css
+					mfrmap.classList.remove('i' + instance + '-zoom-level-' + prevScaleStep);
+
 					currentScaleStep = level;
 					currentScale = zoomSteps[level];
 
-					// scaling step by class dyn css
-					mfrmap.className = options.mapClass + ' shingle-unselectable' + ' i' + instance + '-zoom-level-' + level;
+					// set new scaling step by class dyn css
+					mfrmap.classList.add('i' + instance + '-zoom-level-' + currentScaleStep);
 
 					zoom.value = level;
 					updateBitmapStyles('scale');
@@ -3980,7 +4029,7 @@ var shingle = shingle || (function () {
 
 					var x1 = node1.x, y1 = node1.y,
 						x2 = node2.x, y2 = node2.y,
-						line = makeLineElement(x1, y1, x2, y2);
+						line = makeLineElement(x1, y1, x2, y2, node1.community || 0, node2.community || 0);
 
 					line.style.stroke = "" + edgeHighlightColor(node1, node2);
 					line.setAttributeNS(null, "stroke-width", "1em");
@@ -4647,7 +4696,9 @@ var shingle = shingle || (function () {
 				setSelection: setSelection,
 				currentNodeId: function () { return currentnodeid; },
 				setMarkerOffsets: setMarkerOffsets,
-				setMarkerCoverAreas: setMarkerCoverAreas
+				setMarkerCoverAreas: setMarkerCoverAreas,
+				showCommunity: showCommunity,
+				hideCommunity: hideCommunity
 			};
 
 		}, newGraph = function (settings) {
