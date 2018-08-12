@@ -106,7 +106,7 @@ var shingle = shingle || (function () {
 					nodeRadiusScaleFactor: 1 / 50.0,
 					nodeRadiusScalePower: 1.25,
 					nodesGrow: false,
-					useNonScalingStrokeForNodes: false,
+					useNonScalingStrokeForNodes: true, /*To Rene: if I set this variable to false, then when zooming with the mouse wheel, zooming out completely and then zooming back in again, the nodes become really big. */
 					fontFamily: "sans",
 					fontSize: 18,
 					relatedNodesFontSize: 18,
@@ -2557,7 +2557,7 @@ var shingle = shingle || (function () {
 
 			function calcNodeScale(scale) {
 				if (quadLevels) {
-					return (18.0 / scale);
+					return (24.0 / scale);
 				}
 				return 1;
 			}
